@@ -1,0 +1,341 @@
+{% extends "base.html" %}
+{% set active_page = "order" %}
+{% block title %}Анализ заявки — Sales AI{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Анализ заявки клиента</h2>
+    <p class="subtitle">Выберите клиента и введите позиции заявки для получения рекомендаций.</p>
+
+    <!-- Client selector -->
+    <div class="form-group">
+        <label>Клиент</label>
+        <select id="clientSelect" placeholder="Начните вводить имя клиента...">
+            <option value="">Выберите клиента</option>
+            {% for c in clients %}
+            <option value="{{ c }}">{{ c }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Client info (hidden until selected) -->
+    <div class="client-info" id="clientInfo" style="display: none;">
+        <div><span class="label">Ниша: </span><span class="value" id="ciNiche"></span></div>
+        <div><span class="label">Заказов в истории: </span><span class="value" id="ciOrders"></span></div>
+    </div>
+
+    <!-- Order lines -->
+    <h3 style="margin-bottom: 12px; font-size: 16px;">Позиции заявки</h3>
+    <table class="order-table" id="orderTable">
+        <thead>
+            <tr>
+                <th class="row-num">#</th>
+                <th style="width: 45%;">Товарная подгруппа (N3)</th>
+                <th style="width: 30%;">Товар (N4, опционально)</th>
+                <th style="width: 15%;">Кол-во, т</th>
+                <th style="width: 40px;"></th>
+            </tr>
+        </thead>
+        <tbody id="orderLines">
+        </tbody>
+    </table>
+
+    <div style="display: flex; gap: 12px; margin-top: 8px;">
+        <button class="btn btn-secondary btn-sm" id="addRowBtn">+ Добавить позицию</button>
+    </div>
+
+    <div style="margin-top: 24px; display: flex; gap: 12px; align-items: center;">
+        <button class="btn btn-primary" id="analyzeBtn" disabled>Анализировать</button>
+        <span id="analyzeStatus"></span>
+    </div>
+</div>
+
+<!-- Spinner -->
+<div class="spinner" id="spinner">
+    <p style="margin-top: 12px;">Анализируем заявку...</p>
+</div>
+
+<!-- Results (hidden until analysis) -->
+<div id="resultsContainer" style="display: none;">
+
+    <!-- Analysis 1 -->
+    <div class="card results-section">
+        <h3><span class="priority-dot priority-high"></span> Что клиент мог забыть включить в заявку</h3>
+        <p class="subtitle">Позиции, которые клиент регулярно заказывал, но не включил в текущую заявку.</p>
+        <div id="results1"></div>
+    </div>
+
+    <!-- Analysis 2 -->
+    <div class="card results-section">
+        <h3><span class="priority-dot priority-medium"></span> Что покупают клиенты ниши</h3>
+        <p class="subtitle">Позиции, популярные у клиентов из той же ниши, но отсутствующие в заявке.</p>
+        <div id="results2"></div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// --- Data ---
+const productsN3 = {{ products_n3 | tojson }};
+let lineCounter = 0;
+let n3Selects = {};
+
+// --- Tom Select for client ---
+const clientSelect = new TomSelect('#clientSelect', {
+    maxItems: 1,
+    create: false,
+    maxOptions: null,
+    sortField: { field: 'text', direction: 'asc' },
+});
+
+clientSelect.on('change', async function(value) {
+    const info = document.getElementById('clientInfo');
+    if (!value) {
+        info.style.display = 'none';
+        document.getElementById('analyzeBtn').disabled = true;
+        return;
+    }
+    try {
+        const resp = await fetch('/api/client-info', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({client: value}),
+        });
+        const data = await resp.json();
+        document.getElementById('ciNiche').textContent = data.niche || '—';
+        document.getElementById('ciOrders').textContent = data.total_orders || 0;
+        info.style.display = 'flex';
+        updateAnalyzeBtn();
+    } catch(e) {}
+});
+
+// --- Order lines ---
+function addOrderLine() {
+    lineCounter++;
+    const idx = lineCounter;
+    const tbody = document.getElementById('orderLines');
+    const tr = document.createElement('tr');
+    tr.id = `line-${idx}`;
+    tr.innerHTML = `
+        <td class="row-num">${idx}</td>
+        <td><select id="n3-${idx}" class="n3-select" placeholder="Выберите подгруппу...">
+            <option value="">—</option>
+            ${productsN3.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('')}
+        </select></td>
+        <td><select id="n4-${idx}" class="n4-select" placeholder="Выберите товар..." disabled>
+            <option value="">—</option>
+        </select></td>
+        <td><input type="number" id="qty-${idx}" step="0.001" min="0" placeholder="0.000"></td>
+        <td><button class="btn btn-danger btn-sm" onclick="removeLine(${idx})">×</button></td>
+    `;
+    tbody.appendChild(tr);
+
+    // Init Tom Select for N3
+    const ts = new TomSelect(`#n3-${idx}`, {
+        maxItems: 1,
+        create: false,
+        sortField: { field: 'text', direction: 'asc' },
+        onChange: function(value) { onN3Change(idx, value); updateAnalyzeBtn(); }
+    });
+    n3Selects[idx] = ts;
+
+    // Init Tom Select for N4 (empty initially)
+    const ts4 = new TomSelect(`#n4-${idx}`, {
+        maxItems: 1,
+        create: false,
+        sortField: { field: 'text', direction: 'asc' },
+    });
+    n3Selects[`n4-${idx}`] = ts4;
+
+    updateAnalyzeBtn();
+}
+
+function removeLine(idx) {
+    const tr = document.getElementById(`line-${idx}`);
+    if (tr) {
+        if (n3Selects[idx]) { n3Selects[idx].destroy(); delete n3Selects[idx]; }
+        if (n3Selects[`n4-${idx}`]) { n3Selects[`n4-${idx}`].destroy(); delete n3Selects[`n4-${idx}`]; }
+        tr.remove();
+    }
+    updateAnalyzeBtn();
+}
+
+async function onN3Change(idx, n3Value) {
+    const ts4 = n3Selects[`n4-${idx}`];
+    if (!ts4) return;
+
+    ts4.clear();
+    ts4.clearOptions();
+
+    if (!n3Value) {
+        ts4.disable();
+        return;
+    }
+
+    try {
+        const resp = await fetch('/api/products_n4', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({n3: n3Value}),
+        });
+        const data = await resp.json();
+        data.forEach(item => ts4.addOption({value: item, text: item}));
+        ts4.enable();
+    } catch(e) {
+        ts4.disable();
+    }
+}
+
+function updateAnalyzeBtn() {
+    const client = clientSelect.getValue();
+    const lines = getOrderLines();
+    document.getElementById('analyzeBtn').disabled = !client || lines.length === 0;
+}
+
+function getOrderLines() {
+    const lines = [];
+    const rows = document.querySelectorAll('#orderLines tr');
+    rows.forEach(tr => {
+        const idx = tr.id.replace('line-', '');
+        const n3 = n3Selects[idx] ? n3Selects[idx].getValue() : '';
+        const n4 = n3Selects[`n4-${idx}`] ? n3Selects[`n4-${idx}`].getValue() : '';
+        const qtyEl = document.getElementById(`qty-${idx}`);
+        const qty = qtyEl ? parseFloat(qtyEl.value) || 0 : 0;
+        if (n3) lines.push({n3, n4: n4 || null, qty});
+    });
+    return lines;
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// Add initial row
+addOrderLine();
+
+document.getElementById('addRowBtn').addEventListener('click', addOrderLine);
+
+// --- Analyze ---
+document.getElementById('analyzeBtn').addEventListener('click', async () => {
+    const client = clientSelect.getValue();
+    const orderLines = getOrderLines();
+
+    if (!client || orderLines.length === 0) return;
+
+    document.getElementById('analyzeBtn').disabled = true;
+    document.getElementById('analyzeStatus').textContent = '';
+    document.getElementById('resultsContainer').style.display = 'none';
+    document.getElementById('spinner').classList.add('active');
+
+    try {
+        const resp = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({client, order_lines: orderLines}),
+        });
+        const data = await resp.json();
+
+        if (data.error) {
+            document.getElementById('analyzeStatus').textContent = 'Ошибка: ' + data.error;
+        } else {
+            renderResults(data);
+            document.getElementById('resultsContainer').style.display = 'block';
+        }
+    } catch(e) {
+        document.getElementById('analyzeStatus').textContent = 'Ошибка сети: ' + e.message;
+    }
+
+    document.getElementById('spinner').classList.remove('active');
+    document.getElementById('analyzeBtn').disabled = false;
+});
+
+// --- Render results ---
+function renderResults(data) {
+    renderAnalysis1(data.analysis1_forgotten || []);
+    renderAnalysis2(data.analysis2_niche || []);
+}
+
+function renderAnalysis1(items) {
+    const container = document.getElementById('results1');
+    if (items.length === 0) {
+        container.innerHTML = '<div class="empty-state">Все позиции клиента учтены в заявке. Рекомендаций нет.</div>';
+        return;
+    }
+    // Sort by frequency descending
+    items.sort((a, b) => b.frequency_pct - a.frequency_pct);
+
+    let html = `<table class="results-table">
+        <thead><tr>
+            <th title="Красный — позиция отсутствует в заявке, оранжевый — количество ниже обычного"></th>
+            <th title="Конкретные товары, которые клиент чаще всего заказывает в этой категории">Часто заказываемые товары</th>
+            <th title="Категория товаров (подгруппа), которую клиент обычно включает в заказ">Товарный раздел</th>
+            <th title="Как часто клиент заказывал эту категорию: кол-во заказов с ней / общее кол-во заказов">Частота заказа позиции</th>
+            <th title="Среднее количество тонн, которое клиент обычно берёт в одном заказе по этой категории">Ср. кол-во, тн</th>
+            <th title="Сколько тонн по этой категории указано в текущей заявке (— если отсутствует)">В заявке, тн</th>
+        </tr></thead><tbody>`;
+
+    items.forEach(item => {
+        const dotClass = item.type === 'missing' ? 'priority-high' : 'priority-medium';
+        const currentQty = item.current_qty !== null ? item.current_qty : '—';
+        const n4html = item.typical_n4.length > 0
+            ? `<div class="n4-list">${item.typical_n4.map(escapeHtml).join('<br>')}</div>`
+            : '';
+
+        html += `<tr>
+            <td><span class="priority-dot ${dotClass}"></span></td>
+            <td>${n4html}</td>
+            <td>${escapeHtml(item.n3)}</td>
+            <td>${item.order_count} из ${item.total_orders} (${item.frequency_pct}%)</td>
+            <td>${item.avg_qty}</td>
+            <td>${currentQty}</td>
+        </tr>`;
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function renderAnalysis2(items) {
+    const container = document.getElementById('results2');
+    if (items.length === 0) {
+        container.innerHTML = '<div class="empty-state">Все популярные позиции ниши учтены в заявке. Рекомендаций нет.</div>';
+        return;
+    }
+    let html = `<table class="results-table">
+        <thead><tr>
+            <th title="Оранжевый — позиция популярна в нише, но отсутствует в заявке клиента"></th>
+            <th title="Заказывал ли этот клиент данную категорию раньше хотя бы один раз">Клиент покупал ранее</th>
+            <th title="Какой процент клиентов из той же ниши регулярно заказывает эту категорию">Доля клиентов ниши</th>
+            <th title="Среднее количество тонн на одного клиента ниши по этой категории">Ср. кол-во на клиента, тн</th>
+            <th title="Категория товаров, популярная среди клиентов этой ниши">Товарная подгруппа</th>
+            <th title="Конкретные товары, которые чаще всего заказывают клиенты ниши в этой категории">Типичные товары</th>
+        </tr></thead><tbody>`;
+
+    items.forEach(item => {
+        const dotClass = item.priority === 'high' ? 'priority-high' : 'priority-medium';
+        const boughtTag = item.client_bought_before
+            ? '<span class="tag tag-yes">Да</span>'
+            : '<span class="tag tag-no">Нет</span>';
+        const n4html = item.typical_n4.length > 0
+            ? `<div class="n4-list">${item.typical_n4.map(escapeHtml).join('<br>')}</div>`
+            : '';
+
+        html += `<tr>
+            <td><span class="priority-dot ${dotClass}"></span></td>
+            <td>${boughtTag}</td>
+            <td>${item.client_count} из ${item.total_clients} (${item.niche_pct}%)</td>
+            <td>${item.avg_qty_per_client}</td>
+            <td>${escapeHtml(item.n3)}</td>
+            <td>${n4html}</td>
+        </tr>`;
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+</script>
+{% endblock %}

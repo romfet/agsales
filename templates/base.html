@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ИИ-ассистент менеджера по заявкам клиентов{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.css">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <nav class="nav">
+        <a href="/" class="nav-brand">ИИ-ассистент менеджера по заявкам клиентов</a>
+        <a href="/upload" class="nav-btn {% if active_page == 'upload' %}nav-btn-active{% endif %}">Загрузка данных</a>
+        <a href="/order" class="nav-btn {% if active_page == 'order' %}nav-btn-active{% endif %}">Анализ заявки</a>
+        {% if upload_info %}
+        <span class="nav-status">{{ upload_info.rows }} строк | {{ upload_info.clients }} клиентов | {{ upload_info.date_min }} — {{ upload_info.date_max }}</span>
+        {% endif %}
+    </nav>
+
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

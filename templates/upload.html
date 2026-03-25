@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+{% set active_page = "upload" %}
+{% block title %}Загрузка данных — Sales AI{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Загрузка данных из CRM</h2>
+    <p class="subtitle">Загрузите Excel-файл с историей отгрузок. Система автоматически распознает столбцы.</p>
+
+    <form id="uploadForm" enctype="multipart/form-data">
+        <div class="upload-area" id="dropArea">
+            <p id="dropText">Перетащите .xlsx файл сюда или нажмите для выбора</p>
+            <input type="file" id="fileInput" accept=".xlsx,.xls">
+        </div>
+        <div style="margin-top: 16px; display: flex; gap: 12px; align-items: center;">
+            <button type="submit" class="btn btn-primary" id="submitBtn" disabled>Загрузить</button>
+            <span class="status" id="status"></span>
+        </div>
+    </form>
+</div>
+
+<!-- Step 2: Column mapping confirmation -->
+<div class="card" id="mappingCard" style="display:none;">
+    <h2>Распознавание столбцов</h2>
+    <p class="subtitle">Система определила соответствие столбцов. Проверьте и скорректируйте при необходимости.</p>
+
+    <table class="mapping-table" id="mappingTable">
+        <thead>
+            <tr>
+                <th>Поле системы</th>
+                <th>Столбец в файле</th>
+                <th>Уверенность</th>
+                <th>Примеры данных</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <div style="margin-top: 20px; display: flex; gap: 12px; align-items: center;">
+        <button class="btn btn-success" id="confirmBtn">Подтвердить и загрузить</button>
+        <span class="status" id="confirmStatus"></span>
+    </div>
+</div>
+
+{% if upload_info %}
+<div class="card">
+    <h2>Загруженные данные</h2>
+    <div class="stats-grid">
+        <div class="stat-item">
+            <div class="stat-value">{{ upload_info.rows }}</div>
+            <div class="stat-label">Строк</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ upload_info.clients }}</div>
+            <div class="stat-label">Клиентов</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ upload_info.orders }}</div>
+            <div class="stat-label">Заказов</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ upload_info.niches }}</div>
+            <div class="stat-label">Ниш</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ upload_info.products_n3 }}</div>
+            <div class="stat-label">Товарных подгрупп</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ upload_info.date_min }}</div>
+            <div class="stat-label">Начало периода</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ upload_info.date_max }}</div>
+            <div class="stat-label">Конец периода</div>
+        </div>
+    </div>
+    <a href="/order" class="btn btn-success">Перейти к анализу заявки</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const dropArea = document.getElementById('dropArea');
+const fileInput = document.getElementById('fileInput');
+const submitBtn = document.getElementById('submitBtn');
+const status = document.getElementById('status');
+const mappingCard = document.getElementById('mappingCard');
+let selectedFile = null;
+let detectedData = null;
+
+dropArea.addEventListener('click', () => fileInput.click());
+dropArea.addEventListener('dragover', e => { e.preventDefault(); dropArea.classList.add('dragover'); });
+dropArea.addEventListener('dragleave', () => dropArea.classList.remove('dragover'));
+dropArea.addEventListener('drop', e => {
+    e.preventDefault();
+    dropArea.classList.remove('dragover');
+    if (e.dataTransfer.files.length) {
+        selectedFile = e.dataTransfer.files[0];
+        document.getElementById('dropText').innerHTML = '<span class="filename">' + selectedFile.name + '</span>';
+        submitBtn.disabled = false;
+    }
+});
+fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) {
+        selectedFile = fileInput.files[0];
+        document.getElementById('dropText').innerHTML = '<span class="filename">' + selectedFile.name + '</span>';
+        submitBtn.disabled = false;
+    }
+});
+
+// Step 1: Upload and detect
+document.getElementById('uploadForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!selectedFile) return;
+    submitBtn.disabled = true;
+    status.textContent = 'Анализ столбцов...';
+    mappingCard.style.display = 'none';
+
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+
+    try {
+        const resp = await fetch('/upload', { method: 'POST', body: fd });
+        const data = await resp.json();
+        if (data.error) {
+            status.textContent = 'Ошибка: ' + data.error;
+            submitBtn.disabled = false;
+        } else {
+            status.textContent = '';
+            detectedData = data;
+            renderMapping(data);
+        }
+    } catch (err) {
+        status.textContent = 'Ошибка сети: ' + err.message;
+        submitBtn.disabled = false;
+    }
+});
+
+function confidenceBadge(conf) {
+    if (conf >= 0.7) return '<span class="conf-badge conf-high">' + Math.round(conf * 100) + '%</span>';
+    if (conf >= 0.4) return '<span class="conf-badge conf-medium">' + Math.round(conf * 100) + '%</span>';
+    if (conf > 0) return '<span class="conf-badge conf-low">' + Math.round(conf * 100) + '%</span>';
+    return '<span class="conf-badge conf-none">—</span>';
+}
+
+function renderMapping(data) {
+    const tbody = document.querySelector('#mappingTable tbody');
+    tbody.innerHTML = '';
+
+    const fileColumns = data.columns;
+    const mapping = data.mapping;
+    const sampleData = data.sample_data;
+
+    // Expected column order
+    const order = ["Клиентская ниша", "Клиент", "ЗаказНомер", "ЗаказДата", "N1 (товарный раздел)", "N2 (товарная группа)", "N3 (товарная подгруппа)", "N4 (товар)", "Количество"];
+
+    for (const intName of order) {
+        const info = mapping[intName];
+        if (!info) continue;
+
+        const tr = document.createElement('tr');
+
+        // Field name + description
+        const tdName = document.createElement('td');
+        tdName.innerHTML = '<strong>' + intName + '</strong>' +
+            (info.required ? ' <span class="tag tag-missing" style="font-size:10px;">обязат.</span>' : '') +
+            '<div class="n4-list">' + info.description + '</div>';
+        tr.appendChild(tdName);
+
+        // Dropdown for file column
+        const tdSelect = document.createElement('td');
+        const select = document.createElement('select');
+        select.className = 'mapping-select';
+        select.dataset.field = intName;
+
+        const optNone = document.createElement('option');
+        optNone.value = '';
+        optNone.textContent = '— не выбран —';
+        select.appendChild(optNone);
+
+        for (const fcol of fileColumns) {
+            const opt = document.createElement('option');
+            opt.value = fcol;
+            opt.textContent = fcol;
+            if (info.mapped_to === fcol) opt.selected = true;
+            select.appendChild(opt);
+        }
+        tdSelect.appendChild(select);
+        tr.appendChild(tdSelect);
+
+        // Confidence
+        const tdConf = document.createElement('td');
+        tdConf.innerHTML = confidenceBadge(info.confidence);
+        tr.appendChild(tdConf);
+
+        // Sample data
+        const tdSample = document.createElement('td');
+        tdSample.className = 'sample-cell';
+        if (info.mapped_to && sampleData[info.mapped_to]) {
+            tdSample.innerHTML = sampleData[info.mapped_to]
+                .slice(0, 3)
+                .map(v => '<span class="sample-val">' + escapeHtml(truncate(v, 50)) + '</span>')
+                .join('');
+        }
+        tr.appendChild(tdSample);
+
+        tbody.appendChild(tr);
+    }
+
+    // Update sample data when dropdown changes
+    document.querySelectorAll('.mapping-select').forEach(sel => {
+        sel.addEventListener('change', function() {
+            const tr = this.closest('tr');
+            const sampleCell = tr.querySelector('.sample-cell');
+            const col = this.value;
+            if (col && sampleData[col]) {
+                sampleCell.innerHTML = sampleData[col]
+                    .slice(0, 3)
+                    .map(v => '<span class="sample-val">' + escapeHtml(truncate(v, 50)) + '</span>')
+                    .join('');
+            } else {
+                sampleCell.innerHTML = '';
+            }
+        });
+    });
+
+    mappingCard.style.display = 'block';
+    mappingCard.scrollIntoView({ behavior: 'smooth' });
+}
+
+function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+function truncate(s, n) {
+    return s.length > n ? s.slice(0, n) + '...' : s;
+}
+
+// Step 2: Confirm mapping and load
+document.getElementById('confirmBtn').addEventListener('click', async () => {
+    const confirmBtn = document.getElementById('confirmBtn');
+    const confirmStatus = document.getElementById('confirmStatus');
+    confirmBtn.disabled = true;
+    confirmStatus.textContent = 'Загрузка данных...';
+
+    // Collect confirmed mapping
+    const mapping = {};
+    document.querySelectorAll('.mapping-select').forEach(sel => {
+        const field = sel.dataset.field;
+        const value = sel.value || null;
+        mapping[field] = value;
+    });
+
+    // Check required fields
+    const required = ["Клиентская ниша", "Клиент", "ЗаказНомер", "ЗаказДата", "N3 (товарная подгруппа)", "N4 (товар)", "Количество"];
+    const missing = required.filter(f => !mapping[f]);
+    if (missing.length > 0) {
+        confirmStatus.textContent = 'Не указаны обязательные поля: ' + missing.join(', ');
+        confirmBtn.disabled = false;
+        return;
+    }
+
+    try {
+        const resp = await fetch('/upload/confirm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mapping }),
+        });
+        const data = await resp.json();
+        if (data.error) {
+            confirmStatus.textContent = 'Ошибка: ' + data.error;
+            confirmBtn.disabled = false;
+        } else {
+            window.location.reload();
+        }
+    } catch (err) {
+        confirmStatus.textContent = 'Ошибка сети: ' + err.message;
+        confirmBtn.disabled = false;
+    }
+});
+</script>
+{% endblock %}

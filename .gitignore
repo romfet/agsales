@@ -1,0 +1,4 @@
+uploads/*.xlsx
+test_files/*.xlsx
+__pycache__/
+*.pyc
