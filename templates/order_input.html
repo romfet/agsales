@@ -259,6 +259,10 @@ function renderResults(data) {
     renderAnalysis2(data.analysis2_niche || []);
 }
 
+function tipIcon(text) {
+    return `<span class="info-tip">i<span class="tip-text">${escapeHtml(text)}</span></span>`;
+}
+
 function renderAnalysis1(items) {
     const container = document.getElementById('results1');
     if (items.length === 0) {
@@ -270,24 +274,21 @@ function renderAnalysis1(items) {
 
     let html = `<table class="results-table">
         <thead><tr>
-            <th title="Красный — позиция отсутствует в заявке, оранжевый — количество ниже обычного"></th>
-            <th title="Конкретные товары, которые клиент чаще всего заказывает в этой категории">Часто заказываемые товары</th>
-            <th title="Категория товаров (подгруппа), которую клиент обычно включает в заказ">Товарный раздел</th>
-            <th title="Как часто клиент заказывал эту категорию: кол-во заказов с ней / общее кол-во заказов">Частота заказа позиции</th>
-            <th title="Среднее количество тонн, которое клиент обычно берёт в одном заказе по этой категории">Ср. кол-во, тн</th>
-            <th title="Сколько тонн по этой категории указано в текущей заявке (— если отсутствует)">В заявке, тн</th>
+            <th>${tipIcon('Красный — позиция отсутствует в заявке, оранжевый — количество ниже обычного')}</th>
+            <th>Товар ${tipIcon('Конкретный товар, который клиент регулярно заказывает')}</th>
+            <th>Товарная подгруппа ${tipIcon('Категория товаров (подгруппа), к которой относится товар')}</th>
+            <th>Частота заказа ${tipIcon('Как часто клиент заказывал этот товар: кол-во заказов с ним / общее кол-во заказов')}</th>
+            <th>Ср. кол-во, тн ${tipIcon('Среднее количество тонн этого товара, которое клиент обычно берёт в одном заказе')}</th>
+            <th>В заявке, тн ${tipIcon('Сколько тонн по этой категории указано в текущей заявке (— если отсутствует)')}</th>
         </tr></thead><tbody>`;
 
     items.forEach(item => {
         const dotClass = item.type === 'missing' ? 'priority-high' : 'priority-medium';
         const currentQty = item.current_qty !== null ? item.current_qty : '—';
-        const n4html = item.typical_n4.length > 0
-            ? `<div class="n4-list">${item.typical_n4.map(escapeHtml).join('<br>')}</div>`
-            : '';
 
         html += `<tr>
             <td><span class="priority-dot ${dotClass}"></span></td>
-            <td>${n4html}</td>
+            <td>${escapeHtml(item.n4)}</td>
             <td>${escapeHtml(item.n3)}</td>
             <td>${item.order_count} из ${item.total_orders} (${item.frequency_pct}%)</td>
             <td>${item.avg_qty}</td>
@@ -307,12 +308,12 @@ function renderAnalysis2(items) {
     }
     let html = `<table class="results-table">
         <thead><tr>
-            <th title="Оранжевый — позиция популярна в нише, но отсутствует в заявке клиента"></th>
-            <th title="Заказывал ли этот клиент данную категорию раньше хотя бы один раз">Клиент покупал ранее</th>
-            <th title="Какой процент клиентов из той же ниши регулярно заказывает эту категорию">Доля клиентов ниши</th>
-            <th title="Среднее количество тонн на одного клиента ниши по этой категории">Ср. кол-во на клиента, тн</th>
-            <th title="Категория товаров, популярная среди клиентов этой ниши">Товарная подгруппа</th>
-            <th title="Конкретные товары, которые чаще всего заказывают клиенты ниши в этой категории">Типичные товары</th>
+            <th>${tipIcon('Оранжевый — позиция популярна в нише, но отсутствует в заявке клиента')}</th>
+            <th>Клиент покупал ранее ${tipIcon('Заказывал ли этот клиент данный товар раньше хотя бы один раз')}</th>
+            <th>Товар ${tipIcon('Конкретный товар, популярный среди клиентов ниши')}</th>
+            <th>Товарная подгруппа ${tipIcon('Категория товаров, к которой относится товар')}</th>
+            <th>Ср. кол-во, тн ${tipIcon('Среднее количество тонн на одного клиента ниши по этому товару')}</th>
+            <th>Доля клиентов ниши ${tipIcon('Какой процент клиентов из той же ниши заказывает этот товар')}</th>
         </tr></thead><tbody>`;
 
     items.forEach(item => {
@@ -320,17 +321,14 @@ function renderAnalysis2(items) {
         const boughtTag = item.client_bought_before
             ? '<span class="tag tag-yes">Да</span>'
             : '<span class="tag tag-no">Нет</span>';
-        const n4html = item.typical_n4.length > 0
-            ? `<div class="n4-list">${item.typical_n4.map(escapeHtml).join('<br>')}</div>`
-            : '';
 
         html += `<tr>
             <td><span class="priority-dot ${dotClass}"></span></td>
             <td>${boughtTag}</td>
-            <td>${item.client_count} из ${item.total_clients} (${item.niche_pct}%)</td>
-            <td>${item.avg_qty_per_client}</td>
+            <td>${escapeHtml(item.n4)}</td>
             <td>${escapeHtml(item.n3)}</td>
-            <td>${n4html}</td>
+            <td>${item.avg_qty_per_client}</td>
+            <td>${item.client_count} из ${item.total_clients} (${item.niche_pct}%)</td>
         </tr>`;
     });
 

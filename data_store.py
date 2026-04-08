@@ -26,6 +26,8 @@ REQUIRED_COLUMNS = [COL_NICHE, COL_CLIENT, COL_ORDER_NUM, COL_ORDER_DATE, COL_N3
 _raw_df: pd.DataFrame | None = None
 _client_profile: pd.DataFrame | None = None
 _niche_profile: pd.DataFrame | None = None
+_client_profile_n4: pd.DataFrame | None = None
+_niche_profile_n4: pd.DataFrame | None = None
 _clients: list[str] = []
 _client_niche: dict[str, str] = {}
 _products_n3: list[str] = []
@@ -43,6 +45,7 @@ def load_excel(filepath: str, column_mapping: dict[str, str] | None = None) -> d
             If provided, columns are renamed before validation.
     """
     global _raw_df, _client_profile, _niche_profile
+    global _client_profile_n4, _niche_profile_n4
     global _clients, _client_niche, _products_n3, _products_n4_by_n3
     global _total_orders_per_client, _upload_info
 
@@ -127,6 +130,18 @@ def load_excel(filepath: str, column_mapping: dict[str, str] | None = None) -> d
 
     _client_profile = cp
 
+    # --- Build client profile at N4 (product) level ---
+    cp_n4 = df.groupby([COL_CLIENT, COL_N3, COL_N4], observed=True).agg(
+        order_count=(COL_ORDER_NUM, "nunique"),
+        total_qty=(COL_QTY, "sum"),
+    ).reset_index()
+
+    cp_n4["total_orders"] = cp_n4[COL_CLIENT].map(_total_orders_per_client).astype(int)
+    cp_n4["frequency_pct"] = (cp_n4["order_count"] / cp_n4["total_orders"] * 100).round(1)
+    cp_n4["avg_qty_per_order"] = (cp_n4["total_qty"] / cp_n4["order_count"]).round(3)
+
+    _client_profile_n4 = cp_n4
+
     # --- Build niche profile ---
     # For each (niche, N3): how many unique clients buy it
     total_clients_per_niche = df.groupby(COL_NICHE, observed=True)[COL_CLIENT].nunique().to_dict()
@@ -154,6 +169,18 @@ def load_excel(filepath: str, column_mapping: dict[str, str] | None = None) -> d
     np_ = np_.merge(niche_n4_top, on=[COL_NICHE, COL_N3], how="left")
 
     _niche_profile = np_
+
+    # --- Build niche profile at N4 (product) level ---
+    np_n4 = df.groupby([COL_NICHE, COL_N3, COL_N4], observed=True).agg(
+        client_count=(COL_CLIENT, "nunique"),
+        total_qty=(COL_QTY, "sum"),
+    ).reset_index()
+
+    np_n4["total_clients_in_niche"] = np_n4[COL_NICHE].map(total_clients_per_niche).astype(int)
+    np_n4["niche_pct"] = (np_n4["client_count"] / np_n4["total_clients_in_niche"] * 100).round(1)
+    np_n4["avg_qty_per_client"] = (np_n4["total_qty"] / np_n4["client_count"]).round(3)
+
+    _niche_profile_n4 = np_n4
 
     # --- Summary ---
     date_min = df[COL_ORDER_DATE].min()
@@ -210,3 +237,15 @@ def get_niche_profile(niche: str) -> pd.DataFrame:
     if _niche_profile is None:
         return pd.DataFrame()
     return _niche_profile[_niche_profile[COL_NICHE] == niche]
+
+
+def get_client_profile_n4(client: str) -> pd.DataFrame:
+    if _client_profile_n4 is None:
+        return pd.DataFrame()
+    return _client_profile_n4[_client_profile_n4[COL_CLIENT] == client]
+
+
+def get_niche_profile_n4(niche: str) -> pd.DataFrame:
+    if _niche_profile_n4 is None:
+        return pd.DataFrame()
+    return _niche_profile_n4[_niche_profile_n4[COL_NICHE] == niche]
