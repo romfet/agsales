@@ -24,6 +24,19 @@
         <div><span class="label">Заказов в истории: </span><span class="value" id="ciOrders"></span></div>
     </div>
 
+    <!-- Order number lookup -->
+    <div class="form-group">
+        <label>Загрузить из заказа (опционально)</label>
+        <div style="display: flex; gap: 8px; align-items: flex-start;">
+            <div style="flex: 1; position: relative;">
+                <input type="text" id="orderNumInput" placeholder="Введите номер заказа..." style="width: 100%; padding: 8px 12px; border: 1px solid #d0d5dd; border-radius: 6px; font-size: 14px;">
+                <div id="orderSuggestions" class="order-suggestions" style="display: none;"></div>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="loadOrderBtn" style="padding: 8px 16px;">Загрузить</button>
+        </div>
+        <span id="orderStatus" style="font-size: 13px; color: #666; margin-top: 4px; display: block;"></span>
+    </div>
+
     <!-- Order lines -->
     <h3 style="margin-bottom: 12px; font-size: 16px;">Позиции заявки</h3>
     <table class="order-table" id="orderTable">
@@ -72,6 +85,21 @@
         <div id="results2"></div>
     </div>
 
+</div>
+
+<!-- AI Chat Widget -->
+<button class="chat-fab" id="chatFab" title="ИИ-ассистент">&#128172;</button>
+<div class="chat-window" id="chatWindow">
+    <div class="chat-header">
+        <span class="chat-header-dot"></span> ИИ-ассистент
+    </div>
+    <div class="chat-messages" id="chatMessages">
+        <div class="chat-msg chat-msg-ai">Привет! Я помогу быстро добавить позиции в заявку. Просто опишите товар, например: <i>«профильная 40 на 20, 5 тонн»</i></div>
+    </div>
+    <div class="chat-input-area">
+        <textarea class="chat-input" id="chatInput" placeholder="Опишите товар..." rows="1"></textarea>
+        <button class="chat-send" id="chatSend">&#10148;</button>
+    </div>
 </div>
 {% endblock %}
 
@@ -219,6 +247,133 @@ addOrderLine();
 
 document.getElementById('addRowBtn').addEventListener('click', addOrderLine);
 
+// --- Order number lookup ---
+const orderNumInput = document.getElementById('orderNumInput');
+const orderSuggestions = document.getElementById('orderSuggestions');
+const loadOrderBtn = document.getElementById('loadOrderBtn');
+const orderStatus = document.getElementById('orderStatus');
+let searchTimeout = null;
+
+orderNumInput.addEventListener('input', () => {
+    const q = orderNumInput.value.trim();
+    clearTimeout(searchTimeout);
+    if (q.length < 2) { orderSuggestions.style.display = 'none'; return; }
+
+    searchTimeout = setTimeout(async () => {
+        try {
+            const client = clientSelect.getValue() || null;
+            const resp = await fetch('/api/search-orders', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({query: q, client}),
+            });
+            const items = await resp.json();
+            if (items.length === 0) {
+                orderSuggestions.style.display = 'none';
+                return;
+            }
+            orderSuggestions.innerHTML = items.map(o => `
+                <div class="order-suggestion-item" data-num="${escapeHtml(o.order_num)}">
+                    <div>
+                        <span class="order-suggestion-num">${escapeHtml(o.order_num)}</span>
+                        <span class="order-suggestion-meta"> — ${escapeHtml(o.client)}</span>
+                    </div>
+                    <span class="order-suggestion-meta">${o.date || ''} (${o.line_count} поз.)</span>
+                </div>
+            `).join('');
+            orderSuggestions.style.display = 'block';
+
+            orderSuggestions.querySelectorAll('.order-suggestion-item').forEach(el => {
+                el.addEventListener('click', () => {
+                    orderNumInput.value = el.dataset.num;
+                    orderSuggestions.style.display = 'none';
+                    loadOrder(el.dataset.num);
+                });
+            });
+        } catch(e) {}
+    }, 300);
+});
+
+// Hide suggestions on blur
+document.addEventListener('click', (e) => {
+    if (!orderNumInput.contains(e.target) && !orderSuggestions.contains(e.target)) {
+        orderSuggestions.style.display = 'none';
+    }
+});
+
+loadOrderBtn.addEventListener('click', () => {
+    const num = orderNumInput.value.trim();
+    if (num) loadOrder(num);
+});
+
+orderNumInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const num = orderNumInput.value.trim();
+        if (num) { orderSuggestions.style.display = 'none'; loadOrder(num); }
+    }
+});
+
+async function loadOrder(orderNum) {
+    orderStatus.textContent = 'Загрузка...';
+    orderStatus.style.color = '#666';
+    try {
+        const resp = await fetch('/api/order-lines', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({order_num: orderNum}),
+        });
+        if (!resp.ok) {
+            const err = await resp.json();
+            orderStatus.textContent = err.error || 'Заказ не найден';
+            orderStatus.style.color = '#c03030';
+            return;
+        }
+        const data = await resp.json();
+
+        // Set client if not already selected
+        if (!clientSelect.getValue() && data.client) {
+            clientSelect.setValue(data.client);
+        }
+
+        // Clear existing lines
+        const tbody = document.getElementById('orderLines');
+        const rows = [...tbody.querySelectorAll('tr')];
+        rows.forEach(tr => {
+            const idx = tr.id.replace('line-', '');
+            removeLine(parseInt(idx));
+        });
+
+        // Add order lines
+        for (const line of data.lines) {
+            addOrderLine();
+            const idx = lineCounter;
+
+            const tsN3 = n3Selects[idx];
+            if (tsN3) tsN3.setValue(line.n3);
+
+            if (line.n4) {
+                await onN3Change(idx, line.n3);
+                const tsN4 = n3Selects[`n4-${idx}`];
+                if (tsN4) tsN4.setValue(line.n4);
+            }
+
+            if (line.qty) {
+                const qtyEl = document.getElementById(`qty-${idx}`);
+                if (qtyEl) qtyEl.value = line.qty;
+            }
+        }
+
+        updateAnalyzeBtn();
+        orderStatus.textContent = `Загружено ${data.lines.length} позиций из заказа ${orderNum}`;
+        orderStatus.style.color = '#2d7a3a';
+
+    } catch(e) {
+        orderStatus.textContent = 'Ошибка: ' + e.message;
+        orderStatus.style.color = '#c03030';
+    }
+}
+
 // --- Analyze ---
 document.getElementById('analyzeBtn').addEventListener('click', async () => {
     const client = clientSelect.getValue();
@@ -269,9 +424,6 @@ function renderAnalysis1(items) {
         container.innerHTML = '<div class="empty-state">Все позиции клиента учтены в заявке. Рекомендаций нет.</div>';
         return;
     }
-    // Sort by frequency descending
-    items.sort((a, b) => b.frequency_pct - a.frequency_pct);
-
     let html = `<table class="results-table">
         <thead><tr>
             <th>${tipIcon('Красный — позиция отсутствует в заявке, оранжевый — количество ниже обычного')}</th>
@@ -280,11 +432,15 @@ function renderAnalysis1(items) {
             <th>Частота заказа ${tipIcon('Как часто клиент заказывал этот товар: кол-во заказов с ним / общее кол-во заказов')}</th>
             <th>Ср. кол-во, тн ${tipIcon('Среднее количество тонн этого товара, которое клиент обычно берёт в одном заказе')}</th>
             <th>В заявке, тн ${tipIcon('Сколько тонн по этой категории указано в текущей заявке (— если отсутствует)')}</th>
+            <th>На складе, тн ${tipIcon('Текущий остаток данного товара на складах (из файла «Остатки в выборке»)')}</th>
+            <th>В пути, тн ${tipIcon('Тоннаж данного товара, находящийся в пути (из файла «Остатки в выборке»)')}</th>
         </tr></thead><tbody>`;
 
     items.forEach(item => {
         const dotClass = item.type === 'missing' ? 'priority-high' : 'priority-medium';
         const currentQty = item.current_qty !== null ? item.current_qty : '—';
+        const stockOn = (item.stock_on !== null && item.stock_on !== undefined) ? item.stock_on : '—';
+        const stockIn = (item.stock_in_transit !== null && item.stock_in_transit !== undefined) ? item.stock_in_transit : '—';
 
         html += `<tr>
             <td><span class="priority-dot ${dotClass}"></span></td>
@@ -293,6 +449,8 @@ function renderAnalysis1(items) {
             <td>${item.order_count} из ${item.total_orders} (${item.frequency_pct}%)</td>
             <td>${item.avg_qty}</td>
             <td>${currentQty}</td>
+            <td>${stockOn}</td>
+            <td>${stockIn}</td>
         </tr>`;
     });
 
@@ -314,6 +472,8 @@ function renderAnalysis2(items) {
             <th>Товарная подгруппа ${tipIcon('Категория товаров, к которой относится товар')}</th>
             <th>Ср. кол-во, тн ${tipIcon('Среднее количество тонн на одного клиента ниши по этому товару')}</th>
             <th>Доля клиентов ниши ${tipIcon('Какой процент клиентов из той же ниши заказывает этот товар')}</th>
+            <th>На складе, тн ${tipIcon('Текущий остаток данного товара на складах (из файла «Остатки в выборке»)')}</th>
+            <th>В пути, тн ${tipIcon('Тоннаж данного товара, находящийся в пути (из файла «Остатки в выборке»)')}</th>
         </tr></thead><tbody>`;
 
     items.forEach(item => {
@@ -321,6 +481,8 @@ function renderAnalysis2(items) {
         const boughtTag = item.client_bought_before
             ? '<span class="tag tag-yes">Да</span>'
             : '<span class="tag tag-no">Нет</span>';
+        const stockOn = (item.stock_on !== null && item.stock_on !== undefined) ? item.stock_on : '—';
+        const stockIn = (item.stock_in_transit !== null && item.stock_in_transit !== undefined) ? item.stock_in_transit : '—';
 
         html += `<tr>
             <td><span class="priority-dot ${dotClass}"></span></td>
@@ -329,11 +491,161 @@ function renderAnalysis2(items) {
             <td>${escapeHtml(item.n3)}</td>
             <td>${item.avg_qty_per_client}</td>
             <td>${item.client_count} из ${item.total_clients} (${item.niche_pct}%)</td>
+            <td>${stockOn}</td>
+            <td>${stockIn}</td>
         </tr>`;
     });
 
     html += '</tbody></table>';
     container.innerHTML = html;
+}
+
+// --- AI Chat ---
+const chatFab = document.getElementById('chatFab');
+const chatWindow = document.getElementById('chatWindow');
+const chatMessages = document.getElementById('chatMessages');
+const chatInput = document.getElementById('chatInput');
+const chatSend = document.getElementById('chatSend');
+let chatHistory = [];
+
+chatFab.addEventListener('click', () => {
+    chatWindow.classList.toggle('open');
+    if (chatWindow.classList.contains('open')) chatInput.focus();
+});
+
+chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendChat();
+    }
+});
+chatSend.addEventListener('click', sendChat);
+
+// Auto-resize textarea
+chatInput.addEventListener('input', () => {
+    chatInput.style.height = 'auto';
+    chatInput.style.height = Math.min(chatInput.scrollHeight, 80) + 'px';
+});
+
+async function sendChat() {
+    const text = chatInput.value.trim();
+    if (!text) return;
+
+    // Add user message
+    appendMsg('user', text);
+    chatInput.value = '';
+    chatInput.style.height = 'auto';
+
+    // Show typing indicator
+    const typing = document.createElement('div');
+    typing.className = 'chat-typing';
+    typing.textContent = 'Думаю';
+    chatMessages.appendChild(typing);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    chatSend.disabled = true;
+
+    try {
+        const resp = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({message: text, history: chatHistory}),
+        });
+        const data = await resp.json();
+
+        typing.remove();
+
+        // Save to history
+        chatHistory.push({role: 'user', content: text});
+        chatHistory.push({role: 'assistant', content: data.message});
+        // Keep history short
+        if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
+
+        // Show AI message with suggestions
+        appendAiMsg(data.message, data.suggestions || []);
+
+    } catch(e) {
+        typing.remove();
+        appendMsg('ai', 'Ошибка сети: ' + e.message);
+    }
+
+    chatSend.disabled = false;
+    chatInput.focus();
+}
+
+function appendMsg(role, text) {
+    const div = document.createElement('div');
+    div.className = `chat-msg chat-msg-${role}`;
+    div.textContent = text;
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function appendAiMsg(text, suggestions) {
+    const wrapper = document.createElement('div');
+    wrapper.style.alignSelf = 'flex-start';
+    wrapper.style.maxWidth = '85%';
+
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'chat-msg chat-msg-ai';
+    msgDiv.style.maxWidth = '100%';
+    msgDiv.textContent = text;
+    wrapper.appendChild(msgDiv);
+
+    suggestions.forEach(s => {
+        const card = document.createElement('div');
+        card.className = 'chat-suggestion';
+
+        let html = `<div class="chat-suggestion-product">${escapeHtml(s.n4 || '—')}</div>`;
+        html += `<div class="chat-suggestion-category">${escapeHtml(s.n3)}</div>`;
+        if (s.qty !== null && s.qty !== undefined) {
+            html += `<div class="chat-suggestion-qty">${s.qty} тн</div>`;
+        }
+        html += `<button class="chat-add-btn" data-n3="${escapeHtml(s.n3)}" data-n4="${escapeHtml(s.n4 || '')}" data-qty="${s.qty || ''}">+ Добавить в заявку</button>`;
+        card.innerHTML = html;
+
+        card.querySelector('.chat-add-btn').addEventListener('click', function() {
+            addFromChat(this.dataset.n3, this.dataset.n4, this.dataset.qty);
+            this.textContent = 'Добавлено!';
+            this.disabled = true;
+            this.style.background = '#999';
+        });
+
+        wrapper.appendChild(card);
+    });
+
+    chatMessages.appendChild(wrapper);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function addFromChat(n3, n4, qty) {
+    // Add a new order line
+    addOrderLine();
+    const idx = lineCounter;
+
+    // Set N3
+    const tsN3 = n3Selects[idx];
+    if (tsN3) {
+        tsN3.setValue(n3);
+        // Trigger N4 loading
+        onN3Change(idx, n3).then(() => {
+            // Set N4 if provided
+            if (n4) {
+                const tsN4 = n3Selects[`n4-${idx}`];
+                if (tsN4) {
+                    setTimeout(() => tsN4.setValue(n4), 300);
+                }
+            }
+        });
+    }
+
+    // Set quantity
+    if (qty) {
+        const qtyEl = document.getElementById(`qty-${idx}`);
+        if (qtyEl) qtyEl.value = qty;
+    }
+
+    updateAnalyzeBtn();
 }
 </script>
 {% endblock %}

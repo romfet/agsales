@@ -1,9 +1,13 @@
 import os
 import json
+from dotenv import load_dotenv
+load_dotenv()
+
 from flask import Flask, request, jsonify, render_template, redirect, url_for, flash
 import data_store
 import analyzer
 import column_mapper
+import ai_chat
 
 app = Flask(__name__)
 app.secret_key = "sales-ai-mvp-secret-key-2025"
@@ -14,7 +18,10 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 @app.context_processor
 def inject_upload_info():
-    return {"upload_info": data_store.get_upload_info()}
+    return {
+        "upload_info": data_store.get_upload_info(),
+        "stock_info": data_store.get_stock_info(),
+    }
 
 
 # --- Pages ---
@@ -76,6 +83,33 @@ def upload_confirm():
         return jsonify({"error": f"Ошибка обработки файла: {e}"}), 400
 
 
+@app.route("/upload/stock", methods=["POST"])
+def upload_stock():
+    """Upload optional 'Остатки в выборке' file. Loads immediately (no mapping step)."""
+    if "file" not in request.files:
+        return jsonify({"error": "Файл не выбран"}), 400
+    f = request.files["file"]
+    if not f.filename:
+        return jsonify({"error": "Пустое имя файла"}), 400
+
+    filepath = os.path.join(UPLOAD_FOLDER, "current_stock.xlsx")
+    f.save(filepath)
+
+    try:
+        info = data_store.load_stock(filepath)
+        return jsonify(info)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Ошибка обработки файла остатков: {e}"}), 400
+
+
+@app.route("/upload/stock/clear", methods=["POST"])
+def upload_stock_clear():
+    data_store.clear_stock()
+    return jsonify({"ok": True})
+
+
 @app.route("/order")
 def order_page():
     if not data_store.is_loaded():
@@ -106,6 +140,26 @@ def api_products_n4():
     data = request.get_json()
     n3 = data.get("n3", "")
     return jsonify(data_store.get_products_n4(n3))
+
+
+@app.route("/api/order-lines", methods=["POST"])
+def api_order_lines():
+    data = request.get_json()
+    order_num = data.get("order_num", "")
+    if not order_num:
+        return jsonify({"error": "Номер заказа не указан"}), 400
+    result = data_store.get_order_lines(order_num)
+    if not result:
+        return jsonify({"error": "Заказ не найден"}), 404
+    return jsonify(result)
+
+
+@app.route("/api/search-orders", methods=["POST"])
+def api_search_orders():
+    data = request.get_json()
+    query = data.get("query", "")
+    client = data.get("client", None)
+    return jsonify(data_store.search_orders(query, client))
 
 
 @app.route("/api/client-info", methods=["POST"])
@@ -141,6 +195,19 @@ def api_analyze():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    data = request.get_json()
+    user_message = data.get("message", "")
+    history = data.get("history", [])
+
+    if not user_message:
+        return jsonify({"error": "Пустое сообщение"}), 400
+
+    result = ai_chat.chat(history, user_message)
+    return jsonify(result)
 
 
 if __name__ == "__main__":

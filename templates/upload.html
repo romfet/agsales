@@ -44,6 +44,42 @@
 
 {% if upload_info %}
 <div class="card">
+    <h2>Остатки в выборке <span style="font-size: 13px; color: #888; font-weight: normal;">(опционально)</span></h2>
+    <p class="subtitle">Excel со столбцами «N4», «Остаток, тн», «В пути, тн». Тоннаж будет показан рядом с рекомендациями.</p>
+
+    <form id="stockForm" enctype="multipart/form-data">
+        <div class="upload-area" id="stockDropArea">
+            <p id="stockDropText">Перетащите .xlsx файл сюда или нажмите для выбора</p>
+            <input type="file" id="stockFileInput" accept=".xlsx,.xls">
+        </div>
+        <div style="margin-top: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <button type="submit" class="btn btn-primary" id="stockSubmitBtn" disabled>Загрузить остатки</button>
+            {% if stock_info %}
+            <button type="button" class="btn btn-secondary btn-sm" id="stockClearBtn">Очистить</button>
+            {% endif %}
+            <span class="status" id="stockStatus"></span>
+        </div>
+    </form>
+
+    {% if stock_info %}
+    <div class="stats-grid" style="margin-top: 16px;">
+        <div class="stat-item">
+            <div class="stat-value">{{ stock_info.products_n4 }}</div>
+            <div class="stat-label">Товаров (N4)</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ stock_info.with_on_stock }}</div>
+            <div class="stat-label">С остатком на складе</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ stock_info.with_in_transit }}</div>
+            <div class="stat-label">С товаром в пути</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card">
     <h2>Загруженные данные</h2>
     <div class="stats-grid">
         <div class="stat-item">
@@ -238,6 +274,70 @@ function escapeHtml(s) {
 
 function truncate(s, n) {
     return s.length > n ? s.slice(0, n) + '...' : s;
+}
+
+// --- Stock file upload (optional) ---
+const stockDropArea = document.getElementById('stockDropArea');
+const stockFileInput = document.getElementById('stockFileInput');
+const stockSubmitBtn = document.getElementById('stockSubmitBtn');
+const stockStatus = document.getElementById('stockStatus');
+const stockClearBtn = document.getElementById('stockClearBtn');
+let stockFile = null;
+
+if (stockDropArea) {
+    stockDropArea.addEventListener('click', () => stockFileInput.click());
+    stockDropArea.addEventListener('dragover', e => { e.preventDefault(); stockDropArea.classList.add('dragover'); });
+    stockDropArea.addEventListener('dragleave', () => stockDropArea.classList.remove('dragover'));
+    stockDropArea.addEventListener('drop', e => {
+        e.preventDefault();
+        stockDropArea.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            stockFile = e.dataTransfer.files[0];
+            document.getElementById('stockDropText').innerHTML = '<span class="filename">' + stockFile.name + '</span>';
+            stockSubmitBtn.disabled = false;
+        }
+    });
+    stockFileInput.addEventListener('change', () => {
+        if (stockFileInput.files.length) {
+            stockFile = stockFileInput.files[0];
+            document.getElementById('stockDropText').innerHTML = '<span class="filename">' + stockFile.name + '</span>';
+            stockSubmitBtn.disabled = false;
+        }
+    });
+
+    document.getElementById('stockForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        if (!stockFile) return;
+        stockSubmitBtn.disabled = true;
+        stockStatus.textContent = 'Загрузка остатков...';
+        const fd = new FormData();
+        fd.append('file', stockFile);
+        try {
+            const resp = await fetch('/upload/stock', { method: 'POST', body: fd });
+            const data = await resp.json();
+            if (data.error) {
+                stockStatus.textContent = 'Ошибка: ' + data.error;
+                stockSubmitBtn.disabled = false;
+            } else {
+                window.location.reload();
+            }
+        } catch (err) {
+            stockStatus.textContent = 'Ошибка сети: ' + err.message;
+            stockSubmitBtn.disabled = false;
+        }
+    });
+
+    if (stockClearBtn) {
+        stockClearBtn.addEventListener('click', async () => {
+            stockClearBtn.disabled = true;
+            try {
+                await fetch('/upload/stock/clear', { method: 'POST' });
+                window.location.reload();
+            } catch (err) {
+                stockClearBtn.disabled = false;
+            }
+        });
+    }
 }
 
 // Step 2: Confirm mapping and load

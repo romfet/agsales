@@ -3,10 +3,27 @@ Recommendation engine — two analysis algorithms.
 """
 import data_store
 
-# Thresholds
-MIN_FREQUENCY_PCT = 40   # Analysis 1: min % of orders to flag as "forgotten"
+# Thresholds (set for N4 product-level granularity)
+MIN_FREQUENCY_PCT = 5    # Analysis 1: min % of orders to flag as "forgotten"
 LOW_QTY_RATIO = 0.5      # Analysis 1: current qty < avg * this ratio → "low quantity"
-MIN_NICHE_PCT = 30        # Analysis 2: min % of niche clients to recommend
+MIN_NICHE_PCT = 5         # Analysis 2: min % of niche clients to recommend
+
+
+def _attach_stock(item: dict) -> dict:
+    """Attach on_stock / in_transit (tonnes) for the item's N4. None if absent."""
+    info = data_store.get_stock_for_n4(item.get("n4"))
+    if info is None:
+        item["stock_on"] = None
+        item["stock_in_transit"] = None
+    else:
+        on = info["on_stock"]
+        intr = info["in_transit"]
+        item["stock_on"] = round(on, 3) if on is not None else None
+        item["stock_in_transit"] = round(intr, 3) if intr is not None else None
+    return item
+
+
+TOP_N = 5
 
 
 def analyze_forgotten(client: str, order_lines: list[dict]) -> list[dict]:
@@ -42,7 +59,7 @@ def analyze_forgotten(client: str, order_lines: list[dict]) -> list[dict]:
         if n3 not in order_n3:
             # Missing product category — show each N4 product
             if freq_pct >= MIN_FREQUENCY_PCT:
-                priority = "high" if freq_pct >= 60 else "medium"
+                priority = "high" if freq_pct >= 10 else "medium"
                 results.append({
                     "type": "missing",
                     "n3": n3,
@@ -70,9 +87,9 @@ def analyze_forgotten(client: str, order_lines: list[dict]) -> list[dict]:
                     "priority": "medium",
                 })
 
-    # Sort by frequency descending
-    results.sort(key=lambda x: x["frequency_pct"], reverse=True)
-    return results
+    # Sort by avg qty descending and keep top-N most voluminous
+    results.sort(key=lambda x: x["avg_qty"], reverse=True)
+    return [_attach_stock(r) for r in results[:TOP_N]]
 
 
 def analyze_niche(client: str, order_lines: list[dict]) -> list[dict]:
@@ -107,7 +124,7 @@ def analyze_niche(client: str, order_lines: list[dict]) -> list[dict]:
         niche_pct = row["niche_pct"]
 
         if n3 not in order_n3 and niche_pct >= MIN_NICHE_PCT:
-            priority = "high" if niche_pct >= 60 else "medium"
+            priority = "high" if niche_pct >= 8 else "medium"
             results.append({
                 "n3": n3,
                 "n4": n4,
@@ -120,5 +137,5 @@ def analyze_niche(client: str, order_lines: list[dict]) -> list[dict]:
                 "priority": priority,
             })
 
-    results.sort(key=lambda x: x["niche_pct"], reverse=True)
-    return results
+    results.sort(key=lambda x: x["avg_qty_per_client"], reverse=True)
+    return [_attach_stock(r) for r in results[:TOP_N]]
