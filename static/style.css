@@ -238,6 +238,28 @@ select:focus, input[type="number"]:focus {
     color: #555;
     border-bottom: 2px solid #e0e3e8;
 }
+/* Sortable numeric column headers */
+.results-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+.results-table th.sortable:hover {
+    background: #eaeef3;
+    color: #1a2332;
+}
+.results-table th.sortable.sorted {
+    color: #1a2332;
+}
+.results-table th .sort-arrow {
+    margin-left: 4px;
+    font-size: 11px;
+    color: #98a2b3;
+}
+.results-table th.sortable:hover .sort-arrow,
+.results-table th.sortable.sorted .sort-arrow {
+    color: #4A90D9;
+}
 /* Info tooltip icon */
 .info-tip {
     display: inline-flex;
