@@ -422,6 +422,14 @@ function numOrDash(v) {
     return (v !== null && v !== undefined) ? v : '—';
 }
 
+// Primary column: product name (prominent) with its subgroup as a secondary
+// line underneath — one roomy text column reads better than two cramped ones.
+function productCell(it) {
+    return '<div class="prod">'
+        + `<span class="prod-name">${escapeHtml(it.n4)}</span>`
+        + `<span class="prod-sub">${escapeHtml(it.n3)}</span></div>`;
+}
+
 // Generic sortable table renderer.
 // `cols` — array of {header, cell(item), sortVal(item)?}. Columns with a sortVal
 // are clickable: click toggles desc → asc → desc; nulls always sort to the bottom.
@@ -450,20 +458,21 @@ function renderSortableTable(containerId, cols, state, emptyText) {
 
     let html = '<div class="table-wrap"><table class="results-table"><thead><tr>';
     cols.forEach((col, i) => {
+        const cls = col.cls ? ' ' + col.cls : '';
         if (col.sortVal) {
             const active = state.sortKey === i;
             const arrow = active ? (state.sortDir === 'asc' ? '▲' : '▼') : '↕';
-            html += `<th class="sortable${active ? ' sorted' : ''}" data-col="${i}">`
+            html += `<th class="sortable${active ? ' sorted' : ''}${cls}" data-col="${i}">`
                 + `${col.header}<span class="sort-arrow">${arrow}</span></th>`;
         } else {
-            html += `<th>${col.header}</th>`;
+            html += `<th class="${col.cls || ''}">${col.header}</th>`;
         }
     });
     html += '</tr></thead><tbody>';
 
     rows.forEach(item => {
         html += '<tr>';
-        cols.forEach(col => { html += `<td>${col.cell(item)}</td>`; });
+        cols.forEach(col => { html += `<td class="${col.cls || ''}">${col.cell(item)}</td>`; });
         html += '</tr>';
     });
     html += '</tbody></table></div>';
@@ -488,22 +497,20 @@ const analysis2State = { items: [], sortKey: null, sortDir: 'desc' };
 
 function renderAnalysis1(items) {
     const cols = [
-        { header: 'Товар ' + tipIcon('Конкретный товар, который клиент регулярно заказывает'),
-          cell: it => escapeHtml(it.n4) },
-        { header: 'Товарная подгруппа ' + tipIcon('Категория товаров (подгруппа), к которой относится товар'),
-          cell: it => escapeHtml(it.n3) },
+        { header: 'Товар ' + tipIcon('Товар и его товарная подгруппа (категория)'),
+          cell: productCell, cls: 'col-product' },
         { header: 'Частота заказа ' + tipIcon('Как часто клиент заказывал этот товар: кол-во заказов с ним / общее кол-во заказов'),
           cell: it => `${it.order_count} из ${it.total_orders} (${it.frequency_pct}%)`,
-          sortVal: it => it.frequency_pct },
-        { header: 'Ср. кол-во, тн ' + tipIcon('Среднее количество тонн этого товара, которое клиент обычно берёт в одном заказе'),
-          cell: it => it.avg_qty, sortVal: it => it.avg_qty },
+          sortVal: it => it.frequency_pct, cls: 'col-num' },
+        { header: 'Средний чек, тн ' + tipIcon('Среднее количество тонн этого товара, которое клиент обычно берёт в одном заказе'),
+          cell: it => it.avg_qty, sortVal: it => it.avg_qty, cls: 'col-num' },
         { header: 'На складе, тн ' + tipIcon('Текущий остаток данного товара на складах (из файла «Остатки в выборке»)'),
-          cell: it => numOrDash(it.stock_on), sortVal: it => it.stock_on },
+          cell: it => numOrDash(it.stock_on), sortVal: it => it.stock_on, cls: 'col-num' },
         { header: 'В пути, тн ' + tipIcon('Тоннаж данного товара, находящийся в пути (из файла «Остатки в выборке»)'),
-          cell: it => numOrDash(it.stock_in_transit), sortVal: it => it.stock_in_transit },
+          cell: it => numOrDash(it.stock_in_transit), sortVal: it => it.stock_in_transit, cls: 'col-num' },
     ];
     analysis1State.items = items;
-    analysis1State.sortKey = 2;   // default: sort by order frequency, descending
+    analysis1State.sortKey = 1;   // default: sort by order frequency, descending
     analysis1State.sortDir = 'desc';
     renderSortableTable('results1', cols, analysis1State,
         'Все позиции клиента учтены в заявке. Рекомендаций нет.');
@@ -511,24 +518,22 @@ function renderAnalysis1(items) {
 
 function renderAnalysis2(items) {
     const cols = [
-        { header: 'Товар ' + tipIcon('Конкретный товар, популярный среди клиентов ниши'),
-          cell: it => escapeHtml(it.n4) },
-        { header: 'Товарная подгруппа ' + tipIcon('Категория товаров, к которой относится товар'),
-          cell: it => escapeHtml(it.n3) },
+        { header: 'Товар ' + tipIcon('Товар и его товарная подгруппа (категория)'),
+          cell: productCell, cls: 'col-product' },
         { header: 'Частота заказа ' + tipIcon('Как часто клиенты ниши заказывали этот товар: в скольких заказах он был выписан / общее кол-во заказов ниши'),
           cell: it => `${it.order_count} из ${it.total_orders} (${it.frequency_pct}%)`,
-          sortVal: it => it.frequency_pct },
-        { header: 'Ср. кол-во, тн ' + tipIcon('Среднее количество тонн на одного клиента ниши по этому товару'),
-          cell: it => it.avg_qty_per_client, sortVal: it => it.avg_qty_per_client },
+          sortVal: it => it.frequency_pct, cls: 'col-num' },
+        { header: 'Средний чек, тн ' + tipIcon('Среднее количество тонн на одного клиента ниши по этому товару'),
+          cell: it => it.avg_qty_per_client, sortVal: it => it.avg_qty_per_client, cls: 'col-num' },
         { header: 'На складе, тн ' + tipIcon('Текущий остаток данного товара на складах (из файла «Остатки в выборке»)'),
-          cell: it => numOrDash(it.stock_on), sortVal: it => it.stock_on },
+          cell: it => numOrDash(it.stock_on), sortVal: it => it.stock_on, cls: 'col-num' },
         { header: 'В пути, тн ' + tipIcon('Тоннаж данного товара, находящийся в пути (из файла «Остатки в выборке»)'),
-          cell: it => numOrDash(it.stock_in_transit), sortVal: it => it.stock_in_transit },
+          cell: it => numOrDash(it.stock_in_transit), sortVal: it => it.stock_in_transit, cls: 'col-num' },
         { header: 'Клиент покупал ранее ' + tipIcon('Заказывал ли этот клиент данный товар раньше хотя бы один раз'),
-          cell: it => it.client_bought_before ? '<span class="tag tag-yes">Да</span>' : '<span class="tag tag-no">Нет</span>' },
+          cell: it => it.client_bought_before ? '<span class="tag tag-yes">Да</span>' : '<span class="tag tag-no">Нет</span>', cls: 'col-center' },
     ];
     analysis2State.items = items;
-    analysis2State.sortKey = 2;   // default: sort by order frequency, descending
+    analysis2State.sortKey = 1;   // default: sort by order frequency, descending
     analysis2State.sortDir = 'desc';
     renderSortableTable('results2', cols, analysis2State,
         'Все популярные позиции ниши учтены в заявке. Рекомендаций нет.');

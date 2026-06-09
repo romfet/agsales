@@ -7,6 +7,12 @@ body {
     line-height: 1.5;
 }
 
+/* Native form controls don't inherit the page font by default — force it so
+   buttons, inputs, selects and textareas all use the same typeface. */
+input, select, textarea, button {
+    font-family: inherit;
+}
+
 /* Nav */
 .nav {
     background: #1a2332;
@@ -238,6 +244,7 @@ select:focus, input[type="number"]:focus {
     min-width: 760px;
     border-collapse: collapse;
     font-size: 14px;
+    font-variant-numeric: tabular-nums;   /* equal-width digits so numbers line up */
 }
 .results-table th {
     text-align: left;
@@ -337,11 +344,23 @@ select:focus, input[type="number"]:focus {
     border-bottom-color: #1a2332;
 }
 .results-table td {
-    padding: 10px 12px;
-    border-bottom: 1px solid #eee;
-    vertical-align: top;
+    padding: 12px 14px;
+    border-bottom: 1px solid #eef0f3;
+    vertical-align: middle;   /* center content → values don't float to the top of tall rows */
+    line-height: 1.45;
 }
-.results-table tr:hover { background: #fafbfc; }
+/* Row rhythm: subtle zebra striping + clear hover for scanning wide rows */
+.results-table tbody tr:nth-child(even) { background: #fafbfc; }
+.results-table tbody tr:hover { background: #eef4fb; }
+
+/* Primary column: product name + its subgroup stacked, given room to breathe */
+.results-table .col-product { width: 34%; }
+.prod { display: flex; flex-direction: column; gap: 2px; }
+.prod-name { font-weight: 600; color: #1a2332; }
+.prod-sub { font-size: 12px; color: #8a93a3; }
+/* Numeric columns: keep each value on one line */
+.results-table .col-num { white-space: nowrap; }
+.results-table .col-center { text-align: center; }
 
 /* Priority indicators */
 .priority-dot {
