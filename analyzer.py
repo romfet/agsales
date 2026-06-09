@@ -87,8 +87,8 @@ def analyze_forgotten(client: str, order_lines: list[dict]) -> list[dict]:
                     "priority": "medium",
                 })
 
-    # Sort by avg qty descending and keep top-N most voluminous
-    results.sort(key=lambda x: x["avg_qty"], reverse=True)
+    # Rank by order frequency descending and keep the top-N most frequent
+    results.sort(key=lambda x: x["frequency_pct"], reverse=True)
     return [_attach_stock(r) for r in results[:TOP_N]]
 
 
@@ -132,10 +132,15 @@ def analyze_niche(client: str, order_lines: list[dict]) -> list[dict]:
                 "niche_pct": niche_pct,
                 "client_count": int(row["client_count"]),
                 "total_clients": int(row["total_clients_in_niche"]),
+                # Order-based frequency across the niche (how often it is ordered)
+                "order_count": int(row["order_count"]),
+                "total_orders": int(row["total_orders_in_niche"]),
+                "frequency_pct": row["niche_freq_pct"],
                 "client_bought_before": n4 in client_ever_bought_n4,
                 "avg_qty_per_client": round(row["avg_qty_per_client"], 2),
                 "priority": priority,
             })
 
-    results.sort(key=lambda x: x["avg_qty_per_client"], reverse=True)
+    # Rank by order frequency across the niche descending; keep the top-N most frequent
+    results.sort(key=lambda x: x["frequency_pct"], reverse=True)
     return [_attach_stock(r) for r in results[:TOP_N]]

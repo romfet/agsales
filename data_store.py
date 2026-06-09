@@ -149,6 +149,8 @@ def load_excel(filepath: str, column_mapping: dict[str, str] | None = None) -> d
     # --- Build niche profile ---
     # For each (niche, N3): how many unique clients buy it
     total_clients_per_niche = df.groupby(COL_NICHE, observed=True)[COL_CLIENT].nunique().to_dict()
+    # Total unique orders per niche (across all its clients)
+    total_orders_per_niche = df.groupby(COL_NICHE, observed=True)[COL_ORDER_NUM].nunique().to_dict()
 
     np_ = df.groupby([COL_NICHE, COL_N3], observed=True).agg(
         client_count=(COL_CLIENT, "nunique"),
@@ -177,11 +179,14 @@ def load_excel(filepath: str, column_mapping: dict[str, str] | None = None) -> d
     # --- Build niche profile at N4 (product) level ---
     np_n4 = df.groupby([COL_NICHE, COL_N3, COL_N4], observed=True).agg(
         client_count=(COL_CLIENT, "nunique"),
+        order_count=(COL_ORDER_NUM, "nunique"),
         total_qty=(COL_QTY, "sum"),
     ).reset_index()
 
     np_n4["total_clients_in_niche"] = np_n4[COL_NICHE].map(total_clients_per_niche).astype(int)
     np_n4["niche_pct"] = (np_n4["client_count"] / np_n4["total_clients_in_niche"] * 100).round(1)
+    np_n4["total_orders_in_niche"] = np_n4[COL_NICHE].map(total_orders_per_niche).astype(int)
+    np_n4["niche_freq_pct"] = (np_n4["order_count"] / np_n4["total_orders_in_niche"] * 100).round(1)
     np_n4["avg_qty_per_client"] = (np_n4["total_qty"] / np_n4["client_count"]).round(3)
 
     _niche_profile_n4 = np_n4
