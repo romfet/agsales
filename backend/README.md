@@ -38,7 +38,26 @@ alembic -c backend/alembic.ini upgrade head
 
 # 3. Seed mock data + refresh aggregates
 python -m backend.sync.seed_mock
+
+# 4. Run the API (OpenAPI docs at /docs)
+uvicorn backend.app.main:app --reload --port 5050
 ```
+
+## API (phase 2, scaffolded)
+
+FastAPI + Pydantic over `repository`/`services`. OpenAPI at `/docs` is the contract
+for the React SPA (phase 3). Auth is a bearer-token placeholder (`API_AUTH_TOKEN`)
+pending the SSO/OIDC decision — empty token = open (dev only).
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET  | `/api/clients` | client list |
+| GET  | `/api/clients/{guid}/info` | niche + total orders |
+| GET  | `/api/products/n3` · `/api/products/n4?n3=` | catalog |
+| GET  | `/api/orders/search?query=&client_guid=` | order search |
+| GET  | `/api/orders/{order_num}` | order lines |
+| POST | `/api/analyze` | both analyses |
+| GET  | `/api/sync/status` | last sync info |
 
 ## Tests
 

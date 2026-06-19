@@ -15,6 +15,16 @@ class Settings(BaseSettings):
     onec_user: str = ""
     onec_password: str = ""
 
+    # API auth — placeholder bearer token pending the SSO/OIDC decision.
+    # Empty = open (dev only). MUST be set in production until SSO lands.
+    api_auth_token: str = ""
+    # CORS origins for the React SPA (comma-separated). "*" in dev.
+    cors_origins: str = "*"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
     model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
 
 
