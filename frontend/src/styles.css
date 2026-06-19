@@ -1,0 +1,204 @@
+:root {
+  --bg: #f4f5f7;
+  --card: #ffffff;
+  --line: #e3e6ea;
+  --text: #1f2430;
+  --muted: #8a93a2;
+  --accent: #2f6fed;
+  --high: #e4572e;
+  --medium: #d9a300;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+}
+
+header h1 {
+  font-size: 20px;
+  font-weight: 650;
+  margin: 4px 0 20px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+.card h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.card h2 .muted {
+  font-weight: 400;
+}
+
+.builder-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+select,
+input,
+button {
+  font: inherit;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  padding: 0 10px;
+  background: #fff;
+  color: var(--text);
+}
+
+select {
+  max-width: 280px;
+}
+
+input[type="number"] {
+  width: 96px;
+}
+
+button {
+  cursor: pointer;
+  border-color: var(--line);
+  background: #f7f8fa;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  padding: 0 18px;
+  font-weight: 600;
+}
+
+button.ghost {
+  background: #fff;
+}
+
+button.link {
+  border: none;
+  background: none;
+  color: var(--accent);
+  height: auto;
+  padding: 0;
+}
+
+.info {
+  color: var(--muted);
+}
+
+.info b {
+  color: var(--text);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 4px 2px 20px;
+}
+
+.error {
+  color: var(--high);
+  font-weight: 500;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 12px;
+}
+
+.hits {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.hits li {
+  padding: 4px 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+th {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.prod {
+  font-weight: 500;
+}
+
+.niche-tag {
+  margin-left: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+  background: #eaf1ff;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: capitalize;
+}
+
+.badge.high {
+  background: #fde8e1;
+  color: var(--high);
+}
+
+.badge.medium {
+  background: #fbf1d2;
+  color: var(--medium);
+}
