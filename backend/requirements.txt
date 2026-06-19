@@ -1,0 +1,16 @@
+# --- Phase 1: data layer ---
+SQLAlchemy[asyncio]==2.0.36
+psycopg[binary]==3.2.3
+alembic==1.14.0
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# --- Phase 2: sync + API (declared early; used in later phases) ---
+httpx==0.28.1
+APScheduler==3.11.0
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# --- dev / tests ---
+pytest==8.3.4
+pytest-asyncio==0.25.0

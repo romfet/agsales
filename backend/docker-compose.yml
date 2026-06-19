@@ -1,0 +1,21 @@
+# Phase-1 infrastructure: PostgreSQL only.
+# The new backend (API + sync worker) services are added in later phases.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: agsales
+      POSTGRES_PASSWORD: agsales
+      POSTGRES_DB: agsales
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - agsales_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agsales"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  agsales_pgdata:

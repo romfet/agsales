@@ -3,3 +3,6 @@ test_files/*.xlsx
 __pycache__/
 *.pyc
 .env
+backend/.env
+.venv/
+.pytest_cache/
