@@ -1,4 +1,8 @@
-"""API tests via ASGI transport. Needs a migrated+reachable DB (seeded here)."""
+"""API tests via ASGI transport. Needs a migrated+reachable DB (seeded here).
+
+Auth is left disabled (no AUTH_JWT_SECRET), so endpoints are reachable without a
+token — token issuance itself is covered in test_auth.py.
+"""
 import os
 
 import httpx
@@ -11,6 +15,9 @@ from backend.sync.seed_mock import seed
 pytestmark = pytest.mark.integration
 
 _DB = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
+
+# Deterministic guid of mock client #1 (mock_source seed=42).
+KNOWN_CLIENT = "clnt0000-0000-0000-0000-000000000000"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -34,29 +41,11 @@ async def test_health():
     assert r.status_code == 200 and r.json()["status"] == "ok"
 
 
-async def test_clients_then_info():
-    async with _client() as c:
-        clients = (await c.get("/api/clients")).json()
-        assert clients
-        guid = clients[0]["client_guid"]
-        info = (await c.get(f"/api/clients/{guid}/info")).json()
-    assert info["total_orders"] > 0
-
-
-async def test_products_endpoints():
-    async with _client() as c:
-        n3s = (await c.get("/api/products/n3")).json()
-        assert n3s
-        n4s = (await c.get("/api/products/n4", params={"n3": n3s[0]})).json()
-    assert n4s and "item_guid" in n4s[0]
-
-
 async def test_analyze_contract():
     async with _client() as c:
-        guid = (await c.get("/api/clients")).json()[0]["client_guid"]
         r = await c.post(
             "/api/analyze",
-            json={"client_guid": guid, "order_lines": [{"n3": "x", "qty": 1}]},
+            json={"client_guid": KNOWN_CLIENT, "lines": [{"n3": "x", "qty": 1}]},
         )
     assert r.status_code == 200
     body = r.json()
@@ -65,12 +54,50 @@ async def test_analyze_contract():
 
 async def test_analyze_rejects_empty_order():
     async with _client() as c:
-        guid = (await c.get("/api/clients")).json()[0]["client_guid"]
-        r = await c.post("/api/analyze", json={"client_guid": guid, "order_lines": []})
+        r = await c.post("/api/analyze", json={"client_guid": KNOWN_CLIENT, "lines": []})
     assert r.status_code == 400
 
 
-async def test_sync_status():
+async def test_ingest_then_analyze_end_to_end():
+    """Push an order via ingest, refresh, then analyze resolves item_guid → n3 and
+    flags the omitted subgroup as 'forgotten'."""
+    client = "cli-test-0001"
+    order = {
+        "items": [
+            {
+                "order_guid": "ord-test-0001", "order_num": "T-1",
+                "order_date": "2026-06-01", "client_guid": client,
+                "client_name": "ТестКлиент", "niche": "ТестНиша",
+                "n3": "ТЕСТ.A", "n4": "Товар A", "item_guid": "itm-A", "qty": 3,
+            },
+            {
+                "order_guid": "ord-test-0001", "order_num": "T-1",
+                "order_date": "2026-06-01", "client_guid": client,
+                "client_name": "ТестКлиент", "niche": "ТестНиша",
+                "n3": "ТЕСТ.B", "n4": "Товар B", "item_guid": "itm-B", "qty": 4,
+            },
+        ]
+    }
     async with _client() as c:
-        r = await c.get("/api/sync/status")
-    assert r.status_code == 200 and "status" in r.json()
+        ing = await c.post("/api/ingest/order-lines", json=order)
+        assert ing.status_code == 200
+        assert ing.json()["accepted"] == 2
+
+        st = await c.post(
+            "/api/ingest/stock",
+            json={"items": [{"item_guid": "itm-A", "on_stock": 12.5, "in_transit": None}]},
+        )
+        assert st.status_code == 200
+
+        rf = await c.post("/api/ingest/refresh")
+        assert rf.status_code == 200
+
+        # draft order has only subgroup A → B should surface as forgotten
+        an = await c.post(
+            "/api/analyze",
+            json={"client_guid": client, "lines": [{"item_guid": "itm-A", "qty": 3}]},
+        )
+    assert an.status_code == 200
+    body = an.json()
+    assert body["niche"] == "ТестНиша"
+    assert any(rec["n3"] == "ТЕСТ.B" for rec in body["analysis1_forgotten"])

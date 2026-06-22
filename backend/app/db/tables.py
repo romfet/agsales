@@ -57,6 +57,35 @@ sync_state = Table(
     Column("error", Text),
 )
 
+# --- Staging tables (transient landing for the sync pipeline; see migration 0002) ---
+# Same data columns as order_lines/stock, minus order_lines' Identity `id`. The
+# pipeline bulk-loads the full pull here, then swaps it into the live tables.
+order_lines_staging = Table(
+    "order_lines_staging",
+    metadata,
+    Column("order_guid", Text, nullable=False),
+    Column("order_num", Text, nullable=False),
+    Column("order_date", Date),
+    Column("client_guid", Text, nullable=False),
+    Column("client_name", Text, nullable=False),
+    Column("niche", Text),
+    Column("n1", Text),
+    Column("n2", Text),
+    Column("n3", Text, nullable=False),
+    Column("n4", Text, nullable=False),
+    Column("item_guid", Text, nullable=False),
+    Column("qty", Numeric, nullable=False),
+)
+
+stock_staging = Table(
+    "stock_staging",
+    metadata,
+    Column("item_guid", Text),
+    Column("n4_name", Text),
+    Column("on_stock", Numeric),
+    Column("in_transit", Numeric),
+)
+
 # --- Materialized aggregates (rebuilt on every sync) ---
 client_dim = Table(
     "client_dim",

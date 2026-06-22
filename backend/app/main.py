@@ -1,25 +1,19 @@
-"""FastAPI application — JSON API over the async repository/services layer.
+"""FastAPI application — the slimmed two-endpoint service.
 
-Run (from repo root, DB up + seeded):
-    uvicorn backend.app.main:app --reload --port 5050
-Docs at /docs (OpenAPI), used as the contract for the React SPA in phase 3.
+- ``POST /api/ingest/...`` — 1С pushes order history / stock into the DB.
+- ``POST /api/analyze``    — operator posts the draft order, gets recommendations.
+- ``POST /api/auth/token`` — OAuth2 client-credentials token for the above.
+
+Run (from repo root, DB up):
+    uvicorn backend.app.main:app --port 5050
 """
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.api import analysis, clients, orders, products, sync
-from backend.app.core.config import settings
+from backend.app.api import analysis, auth, ingest
 
-app = FastAPI(title="AG Sales Analytics API", version="0.2.0")
+app = FastAPI(title="AG Sales Analytics API", version="0.3.0")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-for module in (clients, products, orders, analysis, sync):
+for module in (auth, ingest, analysis):
     app.include_router(module.router)
 
 

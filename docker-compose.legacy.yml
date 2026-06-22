@@ -1,0 +1,10 @@
+services:
+  web:
+    build: .
+    ports:
+      - "127.0.0.1:5050:5050"
+    volumes:
+      - ./uploads:/app/uploads
+    env_file:
+      - .env
+    restart: unless-stopped

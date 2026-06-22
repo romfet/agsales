@@ -1,10 +1,70 @@
+# Unified stack for the refactored service: Postgres + migrate/seed + FastAPI + worker.
+# Two-endpoint service: POST /api/ingest/* (1С push) and POST /api/analyze.
+# (Legacy Flask MVP lives in docker-compose.legacy.yml until cutover.)
+#
+#   docker compose up -d --build        # API + docs at http://localhost:5050/docs
+#
+# NOTE: `migrate` seeds MOCK history for local dev until the real 1С feed lands.
+name: agsales
+
 services:
-  web:
-    build: .
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: agsales
+      POSTGRES_PASSWORD: agsales
+      POSTGRES_DB: agsales
+    ports:
+      - "127.0.0.1:5433:5432"   # host 5432 is taken by a local Postgres
+    volumes:
+      - agsales_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agsales"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: agsales-backend
+    command: sh -c "alembic -c backend/alembic.ini upgrade head && python -m backend.sync.seed_mock"
+    environment:
+      DATABASE_URL: postgresql+psycopg://agsales:agsales@db:5432/agsales
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: agsales-backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://agsales:agsales@db:5432/agsales
+      # AUTH_JWT_SECRET + AUTH_CLIENTS unset → auth open (local/dev only).
     ports:
       - "127.0.0.1:5050:5050"
-    volumes:
-      - ./uploads:/app/uploads
-    env_file:
-      - .env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
+
+  worker:
+    image: agsales-backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: python -m backend.sync.worker
+    environment:
+      DATABASE_URL: postgresql+psycopg://agsales:agsales@db:5432/agsales
+      REFRESH_INTERVAL_MINUTES: "10"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  agsales_pgdata:

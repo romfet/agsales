@@ -16,8 +16,27 @@ async def _attach_stock(recs: list[dict]) -> list[dict]:
     return recs
 
 
-async def analyze(client_guid: str, order_lines: list[dict]) -> dict:
-    """Run both analyses for a client + in-progress order."""
+async def _resolve_n3(lines: list[dict]) -> list[dict]:
+    """Normalize draft-order lines to {n3, qty}. Lines may arrive with item_guid
+    (n3 resolved from the synced catalog) and/or n3 directly."""
+    need = [l["item_guid"] for l in lines if not l.get("n3") and l.get("item_guid")]
+    n3_by_item = await repo.get_n3_for_items(need) if need else {}
+    out: list[dict] = []
+    for l in lines:
+        n3 = l.get("n3") or n3_by_item.get(l.get("item_guid"))
+        if n3:
+            out.append({"n3": n3, "qty": l.get("qty") or 0})
+    return out
+
+
+async def analyze(client_guid: str, lines: list[dict]) -> dict:
+    """Run both analyses for a client + the current (draft) order.
+
+    Stateless: nothing is written. ``lines`` is the draft order; the analyzer
+    compares it (at N3 level) against the client's own history and the niche.
+    """
+    order_lines = await _resolve_n3(lines)
+
     niche = await repo.get_client_niche(client_guid)
 
     client_profile = await repo.get_client_profile_n4(client_guid)

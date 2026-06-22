@@ -1,9 +1,18 @@
 """Application settings, loaded from environment / backend/.env."""
 from pathlib import Path
 
+from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+
+class ClientCred(BaseModel):
+    """A registered machine-to-machine client (OAuth2 client credentials)."""
+
+    client_id: str
+    client_secret: str
+    scopes: list[str] = []
 
 
 class Settings(BaseSettings):
@@ -15,15 +24,18 @@ class Settings(BaseSettings):
     onec_user: str = ""
     onec_password: str = ""
 
-    # API auth — placeholder bearer token pending the SSO/OIDC decision.
-    # Empty = open (dev only). MUST be set in production until SSO lands.
-    api_auth_token: str = ""
-    # CORS origins for the React SPA (comma-separated). "*" in dev.
-    cors_origins: str = "*"
+    # --- App-to-app auth (OAuth2 client credentials → HS256 JWT) ---
+    # Empty secret = auth DISABLED (local/dev only). Production MUST set it.
+    auth_jwt_secret: str = ""
+    auth_token_ttl_seconds: int = 3600
+    # Registered M2M clients. Set via AUTH_CLIENTS as JSON, e.g.:
+    #   AUTH_CLIENTS='[{"client_id":"onec","client_secret":"…","scopes":["ingest"]},
+    #                  {"client_id":"operator","client_secret":"…","scopes":["analyze"]}]'
+    auth_clients: list[ClientCred] = []
 
-    @property
-    def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+    # Aggregate-refresh cadence for the worker (push model: ingest writes raw
+    # rows, the worker rebuilds materialized views on this interval).
+    refresh_interval_minutes: int = 10
 
     model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
 
