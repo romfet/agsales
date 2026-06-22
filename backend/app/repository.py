@@ -14,7 +14,6 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import delete, distinct, insert, select, text
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from backend.app.db import tables as t
 from backend.app.db.session import engine
@@ -102,33 +101,6 @@ async def ingest_order_lines(items: list[dict]) -> dict:
     return {"accepted": len(rows), "orders_affected": len(affected)}
 
 
-async def ingest_stock(items: list[dict]) -> dict:
-    """Upsert stock by item_guid (1С sends only changed rows)."""
-    if not items:
-        return {"accepted": 0}
-    rows = [
-        {
-            "item_guid": it["item_guid"],
-            "n4_name": it.get("n4_name"),
-            "on_stock": it.get("on_stock"),
-            "in_transit": it.get("in_transit"),
-        }
-        for it in items
-    ]
-    stmt = pg_insert(t.stock).values(rows)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["item_guid"],
-        set_={
-            "n4_name": stmt.excluded.n4_name,
-            "on_stock": stmt.excluded.on_stock,
-            "in_transit": stmt.excluded.in_transit,
-        },
-    )
-    async with engine.begin() as conn:
-        await conn.execute(stmt)
-    return {"accepted": len(rows)}
-
-
 # --- Analyze reads --------------------------------------------------------
 
 async def get_client_niche(client_guid: str) -> str | None:
@@ -172,21 +144,6 @@ async def get_client_bought_item_guids(client_guid: str) -> set[str]:
     )
     async with engine.connect() as conn:
         return {r[0] for r in (await conn.execute(q)).all()}
-
-
-async def get_stock_map(item_guids: list[str]) -> dict[str, dict]:
-    """Batch stock lookup, keyed by item_guid (avoids N+1 in the analyzer)."""
-    if not item_guids:
-        return {}
-    q = select(t.stock.c.item_guid, t.stock.c.on_stock, t.stock.c.in_transit).where(
-        t.stock.c.item_guid.in_(item_guids)
-    )
-    async with engine.connect() as conn:
-        rows = (await conn.execute(q)).all()
-    return {
-        r.item_guid: {"on_stock": _f(r.on_stock), "in_transit": _f(r.in_transit)}
-        for r in rows
-    }
 
 
 # --- Aggregates -----------------------------------------------------------

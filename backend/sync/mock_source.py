@@ -79,19 +79,3 @@ def generate_rows(
                     "qty": round(rng.uniform(0.5, 20.0), 3),
                 })
     return rows
-
-
-def generate_stock(rows: list[dict], seed: int = 7) -> list[dict]:
-    rng = random.Random(seed)
-    by_item: dict[str, str] = {}
-    for r in rows:
-        by_item[r["item_guid"]] = r["n4"]
-    return [
-        {
-            "item_guid": guid,
-            "n4_name": name,
-            "on_stock": round(rng.uniform(0, 200), 3),
-            "in_transit": round(rng.uniform(0, 80), 3) if rng.random() > 0.4 else None,
-        }
-        for guid, name in by_item.items()
-    ]

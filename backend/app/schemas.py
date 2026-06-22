@@ -4,7 +4,12 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
-# --- Auth (OAuth2 client credentials) ---
+# --- Auth (token-request flow) ---
+class TokenRequest(BaseModel):
+    client_id: str
+    client_secret: str
+
+
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -39,17 +44,6 @@ class IngestOrderLinesIn(BaseModel):
     items: list[IngestOrderLine] = Field(default_factory=list)
 
 
-class IngestStockItem(BaseModel):
-    item_guid: str
-    n4_name: str | None = None
-    on_stock: float | None = None
-    in_transit: float | None = None
-
-
-class IngestStockIn(BaseModel):
-    items: list[IngestStockItem] = Field(default_factory=list)
-
-
 class IngestResult(BaseModel):
     accepted: int
     orders_affected: int | None = None
@@ -82,8 +76,6 @@ class ForgottenItem(BaseModel):
     avg_qty: float
     current_qty: float | None = None
     priority: str
-    stock_on: float | None = None
-    stock_in_transit: float | None = None
 
 
 class NicheItem(BaseModel):
@@ -100,8 +92,6 @@ class NicheItem(BaseModel):
     client_bought_before: bool
     avg_qty_per_client: float
     priority: str
-    stock_on: float | None = None
-    stock_in_transit: float | None = None
 
 
 class AnalyzeOut(BaseModel):

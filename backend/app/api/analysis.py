@@ -18,4 +18,7 @@ router = APIRouter(
 async def analyze(payload: AnalyzeIn):
     if not payload.lines:
         raise HTTPException(status_code=400, detail="Заявка пуста")
-    return await services.analyze(payload.client_guid, [l.model_dump() for l in payload.lines])
+    return await services.analyze(
+        payload.client_guid,
+        [l.model_dump() for l in payload.lines],
+    )

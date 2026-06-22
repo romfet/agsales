@@ -1,8 +1,8 @@
 """Recommendation rules — pure functions, ported from the original analyzer.py.
 
 These operate on already-fetched profile rows (lists of dicts) so the business
-logic is unit-testable without a database. Data access and stock enrichment live
-in the service layer (services.py).
+logic is unit-testable without a database. Data access lives in the service
+layer (services.py).
 
 Thresholds and ranking are unchanged from the original implementation.
 """
@@ -34,7 +34,7 @@ def analyze_forgotten(profile_n4: list[dict], order_lines: list[dict]) -> list[d
     """Analysis 1: products this client usually buys but is missing/under-ordering now.
 
     ``profile_n4`` rows come from repository.get_client_profile_n4().
-    Returns up to TOP_N recommendations ranked by frequency (no stock attached).
+    Returns up to TOP_N recommendations ranked by frequency.
     """
     order_n3, order_qty = _order_index(order_lines)
     results: list[dict] = []

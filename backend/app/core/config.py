@@ -8,7 +8,7 @@ _ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class ClientCred(BaseModel):
-    """A registered machine-to-machine client (OAuth2 client credentials)."""
+    """A registered app-to-app client: id + secret + what it may do."""
 
     client_id: str
     client_secret: str
@@ -24,11 +24,12 @@ class Settings(BaseSettings):
     onec_user: str = ""
     onec_password: str = ""
 
-    # --- App-to-app auth (OAuth2 client credentials → HS256 JWT) ---
-    # Empty secret = auth DISABLED (local/dev only). Production MUST set it.
-    auth_jwt_secret: str = ""
+    # --- App-to-app auth: client POSTs its secret to /api/auth/token, gets a
+    #     server-signed JWT, then calls protected endpoints only with that token. ---
+    # Empty signing secret = auth OPEN (local/dev only). Production MUST set it.
+    auth_jwt_secret: str = ""          # server HS256 signing key
     auth_token_ttl_seconds: int = 3600
-    # Registered M2M clients. Set via AUTH_CLIENTS as JSON, e.g.:
+    # Registered clients (id + secret + scopes), via AUTH_CLIENTS env as JSON:
     #   AUTH_CLIENTS='[{"client_id":"onec","client_secret":"…","scopes":["ingest"]},
     #                  {"client_id":"operator","client_secret":"…","scopes":["analyze"]}]'
     auth_clients: list[ClientCred] = []

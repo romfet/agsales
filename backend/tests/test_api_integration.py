@@ -76,18 +76,12 @@ async def test_ingest_then_analyze_end_to_end():
                 "client_name": "ТестКлиент", "niche": "ТестНиша",
                 "n3": "ТЕСТ.B", "n4": "Товар B", "item_guid": "itm-B", "qty": 4,
             },
-        ]
+        ],
     }
     async with _client() as c:
         ing = await c.post("/api/ingest/order-lines", json=order)
         assert ing.status_code == 200
         assert ing.json()["accepted"] == 2
-
-        st = await c.post(
-            "/api/ingest/stock",
-            json={"items": [{"item_guid": "itm-A", "on_stock": 12.5, "in_transit": None}]},
-        )
-        assert st.status_code == 200
 
         rf = await c.post("/api/ingest/refresh")
         assert rf.status_code == 200
@@ -100,4 +94,4 @@ async def test_ingest_then_analyze_end_to_end():
     assert an.status_code == 200
     body = an.json()
     assert body["niche"] == "ТестНиша"
-    assert any(rec["n3"] == "ТЕСТ.B" for rec in body["analysis1_forgotten"])
+    assert any(r["n3"] == "ТЕСТ.B" for r in body["analysis1_forgotten"])

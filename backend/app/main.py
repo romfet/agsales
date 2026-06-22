@@ -1,8 +1,10 @@
 """FastAPI application — the slimmed two-endpoint service.
 
-- ``POST /api/ingest/...`` — 1С pushes order history / stock into the DB.
+- ``POST /api/ingest/...`` — 1С pushes order history into the DB.
 - ``POST /api/analyze``    — operator posts the draft order, gets recommendations.
-- ``POST /api/auth/token`` — OAuth2 client-credentials token for the above.
+
+Auth: client requests a JWT at POST /api/auth/token (client_id + secret), then
+calls protected endpoints with it (scopes: ingest / analyze). See core/security.py.
 
 Run (from repo root, DB up):
     uvicorn backend.app.main:app --port 5050

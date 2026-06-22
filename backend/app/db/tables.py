@@ -38,15 +38,6 @@ order_lines = Table(
     Column("qty", Numeric, nullable=False),
 )
 
-stock = Table(
-    "stock",
-    metadata,
-    Column("item_guid", Text, primary_key=True),
-    Column("n4_name", Text),
-    Column("on_stock", Numeric),
-    Column("in_transit", Numeric),
-)
-
 sync_state = Table(
     "sync_state",
     metadata,

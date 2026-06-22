@@ -1,19 +1,8 @@
-"""Service layer: orchestrates async data access + pure analyzer + stock enrichment."""
+"""Service layer: orchestrates async data access + the pure analyzer."""
 from __future__ import annotations
 
 from backend.app import repository as repo
 from backend.app.domain import analyzer
-
-
-async def _attach_stock(recs: list[dict]) -> list[dict]:
-    """Annotate each recommendation with on_stock / in_transit (by item_guid)."""
-    guids = [r["item_guid"] for r in recs if r.get("item_guid")]
-    stock = await repo.get_stock_map(guids)
-    for r in recs:
-        info = stock.get(r.get("item_guid"))
-        r["stock_on"] = info["on_stock"] if info else None
-        r["stock_in_transit"] = info["in_transit"] if info else None
-    return recs
 
 
 async def _resolve_n3(lines: list[dict]) -> list[dict]:
@@ -33,7 +22,7 @@ async def analyze(client_guid: str, lines: list[dict]) -> dict:
     """Run both analyses for a client + the current (draft) order.
 
     Stateless: nothing is written. ``lines`` is the draft order; the analyzer
-    compares it (at N3 level) against the client's own history and the niche.
+    compares it (at N3 level) against the client's history and the niche.
     """
     order_lines = await _resolve_n3(lines)
 
@@ -47,9 +36,6 @@ async def analyze(client_guid: str, lines: list[dict]) -> dict:
         niche_profile = await repo.get_niche_profile_n4(niche)
         bought = await repo.get_client_bought_item_guids(client_guid)
         niche_recs = analyzer.analyze_niche(niche, niche_profile, bought, order_lines)
-
-    await _attach_stock(forgotten)
-    await _attach_stock(niche_recs)
 
     return {
         "client_guid": client_guid,

@@ -50,5 +50,3 @@ async def test_analyze_end_to_end():
     result = await services.analyze(KNOWN_CLIENT, lines=[])
     assert "analysis1_forgotten" in result
     assert "analysis2_niche" in result
-    for rec in result["analysis1_forgotten"]:
-        assert "stock_on" in rec and "stock_in_transit" in rec
