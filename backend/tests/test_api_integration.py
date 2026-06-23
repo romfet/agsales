@@ -64,7 +64,7 @@ async def test_ingest_then_analyze_end_to_end():
         return {
             "order_num": "T-1", "order_date": "2026-06-01",
             "client_id": "cli-test-0001", "client_name": "ТестКлиент", "niche": "ТестНиша",
-            "n3_id": n3, "n3_name": n3 + " name", "n4_id": n4, "n4_name": n4 + " name", "qty": 3,
+            "n3_id": n3, "n4_id": n4, "qty": 3,
         }
     async with _client() as c:
         ing = await c.post("/api/ingest/order-lines",

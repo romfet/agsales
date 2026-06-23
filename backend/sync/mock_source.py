@@ -36,12 +36,10 @@ def generate_rows(
     # stable GUIDs for subgroups (n3) and products (n4)
     n3_id = {name: _guid("n300", i) for i, name in enumerate(n3_keys)}
     n4_id: dict[str, str] = {}
-    n4_n3: dict[str, str] = {}
     j = 0
-    for n3_name, n4s in CATALOG.items():
+    for n4s in CATALOG.values():
         for n4_name in n4s:
             n4_id[n4_name] = _guid("n400", j)
-            n4_n3[n4_name] = n3_name
             j += 1
 
     rows: list[dict] = []
@@ -66,9 +64,7 @@ def generate_rows(
                     "client_name": client_name,
                     "niche": niche,
                     "n3_id": n3_id[n3_name],
-                    "n3_name": n3_name,
                     "n4_id": n4_id[n4_name],
-                    "n4_name": n4_name,
                     "qty": round(rng.uniform(0.5, 20.0), 3),
                 })
     return rows

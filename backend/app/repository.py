@@ -27,9 +27,7 @@ def _f(v: Any) -> float | None:
 def _row_to_client_profile(r) -> dict:
     return {
         "n3_id": r.n3_id,
-        "n3_name": r.n3_name,
         "n4_id": r.n4_id,
-        "n4_name": r.n4_name,
         "order_count": int(r.order_count),
         "total_orders": int(r.total_orders),
         "frequency_pct": _f(r.frequency_pct),
@@ -40,9 +38,7 @@ def _row_to_client_profile(r) -> dict:
 def _row_to_niche_profile(r) -> dict:
     return {
         "n3_id": r.n3_id,
-        "n3_name": r.n3_name,
         "n4_id": r.n4_id,
-        "n4_name": r.n4_name,
         "client_count": int(r.client_count),
         "total_clients_in_niche": int(r.total_clients_in_niche),
         "order_count": int(r.order_count),
@@ -56,7 +52,7 @@ def _row_to_niche_profile(r) -> dict:
 # --- Ingest (1С feed → raw table) ----------------------------------------
 
 _ORDER_FIELDS = ("order_num", "order_date", "client_id", "client_name", "niche",
-                 "n3_id", "n3_name", "n4_id", "n4_name", "qty")
+                 "n3_id", "n4_id", "qty")
 
 
 def _order_row(it: dict) -> dict:

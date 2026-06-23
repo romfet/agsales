@@ -1,7 +1,7 @@
 """Integration tests against a real PostgreSQL.
 
-Skipped unless a DB is reachable. Requires migrations applied
-(``alembic -c backend/alembic.ini upgrade head``).
+Skipped unless a DB is reachable. Requires the schema applied
+(``python -m backend.db.schema``).
 """
 import os
 

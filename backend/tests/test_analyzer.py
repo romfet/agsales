@@ -4,8 +4,7 @@ from backend.app.domain import analyzer
 
 def _cp(n3_id, n4_id, freq, avg, oc=5, to=20):
     return {
-        "n3_id": n3_id, "n3_name": n3_id + " name",
-        "n4_id": n4_id, "n4_name": n4_id + " name",
+        "n3_id": n3_id, "n4_id": n4_id,
         "order_count": oc, "total_orders": to,
         "frequency_pct": freq, "avg_qty_per_order": avg,
     }
@@ -43,8 +42,7 @@ def test_forgotten_sorted_and_capped_at_top_n():
 
 def _np(n3_id, n4_id, niche_pct, freq, cc=4, tc=10, oc=8, to=50, avg=3):
     return {
-        "n3_id": n3_id, "n3_name": n3_id + " name",
-        "n4_id": n4_id, "n4_name": n4_id + " name",
+        "n3_id": n3_id, "n4_id": n4_id,
         "client_count": cc, "total_clients_in_niche": tc,
         "order_count": oc, "total_orders_in_niche": to,
         "niche_pct": niche_pct, "niche_freq_pct": freq, "avg_qty_per_client": avg,

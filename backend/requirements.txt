@@ -1,7 +1,6 @@
 # --- Phase 1: data layer ---
 SQLAlchemy[asyncio]==2.0.36
 psycopg[binary]==3.2.3
-alembic==1.14.0
 pydantic==2.10.4
 pydantic-settings==2.7.0
 

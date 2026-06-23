@@ -31,9 +31,7 @@ class IngestOrderLine(BaseModel):
     client_name: str | None = None
     niche: str | None = None
     n3_id: str
-    n3_name: str | None = None
     n4_id: str
-    n4_name: str | None = None
     qty: float
     deleted: bool = False
 
@@ -65,9 +63,7 @@ class AnalyzeIn(BaseModel):
 class ForgottenItem(BaseModel):
     type: str
     n3_id: str
-    n3_name: str | None = None
     n4_id: str | None = None
-    n4_name: str | None = None
     order_count: int
     total_orders: int
     frequency_pct: float
@@ -78,9 +74,7 @@ class ForgottenItem(BaseModel):
 
 class NicheItem(BaseModel):
     n3_id: str
-    n3_name: str | None = None
     n4_id: str | None = None
-    n4_name: str | None = None
     niche: str
     niche_pct: float
     client_count: int

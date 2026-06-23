@@ -1,55 +1,30 @@
-"""Table/materialized-view definitions used for *reading* and seeding.
+"""Table/materialized-view definitions used for *reading* and ingest.
 
-This metadata is intentionally NOT handed to Alembic (the schema is created by a
-hand-written migration that includes materialized views, which Alembic cannot
-autogenerate). These objects exist only so the repository can build typed,
-parameterized Core queries against them.
+Schema is created by backend/db/schema.sql (no migrations). These Core objects
+exist only so the repository can build typed, parameterized queries.
 
-Identity is by GUID: client → client_id, subgroup → n3_id, product → n4_id.
-Names (client_name, n3_name, n4_name) are display-only. Order key = order_num.
+Identity by GUID: client → client_id, subgroup → n3_id, product → n4_id.
+Names of subgroup/product are NOT stored (1С resolves them by GUID).
+Order key = order_num; niche = Отрасль.
 """
-from sqlalchemy import (
-    BigInteger,
-    Column,
-    Date,
-    DateTime,
-    Integer,
-    MetaData,
-    Numeric,
-    Table,
-    Text,
-)
+from sqlalchemy import BigInteger, Column, Date, Integer, MetaData, Numeric, Table, Text
 
 metadata = MetaData()
 
-# --- Synced raw data: one row per order line (order × product) ---
 order_lines = Table(
     "order_lines",
     metadata,
     Column("id", BigInteger, primary_key=True),
-    Column("order_num", Text, nullable=False),       # ЗаказНомер — order key
+    Column("order_num", Text, nullable=False),
     Column("order_date", Date),
-    Column("client_id", Text, nullable=False),        # GUID
+    Column("client_id", Text, nullable=False),
     Column("client_name", Text),
-    Column("niche", Text),                            # Отрасль
-    Column("n3_id", Text, nullable=False),            # GUID подгруппы
-    Column("n3_name", Text),
-    Column("n4_id", Text, nullable=False),            # GUID товара
-    Column("n4_name", Text),
+    Column("niche", Text),
+    Column("n3_id", Text, nullable=False),
+    Column("n4_id", Text, nullable=False),
     Column("qty", Numeric, nullable=False),
 )
 
-sync_state = Table(
-    "sync_state",
-    metadata,
-    Column("id", Integer, primary_key=True),
-    Column("status", Text, nullable=False),
-    Column("last_sync_at", DateTime(timezone=True)),
-    Column("row_count", Integer, nullable=False),
-    Column("error", Text),
-)
-
-# --- Materialized aggregates (rebuilt on every refresh) ---
 client_dim = Table(
     "client_dim",
     metadata,
@@ -71,9 +46,7 @@ products = Table(
     "products",
     metadata,
     Column("n4_id", Text),
-    Column("n4_name", Text),
     Column("n3_id", Text),
-    Column("n3_name", Text),
 )
 
 client_profile_n4 = Table(
@@ -81,9 +54,7 @@ client_profile_n4 = Table(
     metadata,
     Column("client_id", Text),
     Column("n3_id", Text),
-    Column("n3_name", Text),
     Column("n4_id", Text),
-    Column("n4_name", Text),
     Column("order_count", Integer),
     Column("total_qty", Numeric),
     Column("total_orders", Integer),
@@ -96,9 +67,7 @@ niche_profile_n4 = Table(
     metadata,
     Column("niche", Text),
     Column("n3_id", Text),
-    Column("n3_name", Text),
     Column("n4_id", Text),
-    Column("n4_name", Text),
     Column("client_count", Integer),
     Column("order_count", Integer),
     Column("total_qty", Numeric),

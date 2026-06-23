@@ -29,7 +29,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     image: agsales-backend
-    command: sh -c "alembic -c backend/alembic.ini upgrade head && python -m backend.sync.seed_mock"
+    command: sh -c "python -m backend.db.schema && python -m backend.sync.seed_mock"
     environment:
       DATABASE_URL: postgresql+psycopg://agsales:agsales@db:5432/agsales
     depends_on:

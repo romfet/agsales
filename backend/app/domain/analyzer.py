@@ -1,7 +1,7 @@
 """Recommendation rules — pure functions over already-fetched profile rows.
 
-Matching is at N3 level by **n3_id** (GUID); n3_name/n4_id/n4_name are carried
-through for display. Data access lives in services.py / repository.py.
+Matching is at N3 level by **n3_id** (GUID); n4_id is carried through (1С resolves
+names by GUID). Data access lives in services.py / repository.py.
 """
 from __future__ import annotations
 
@@ -43,8 +43,7 @@ def analyze_forgotten(profile_n4: list[dict], order_lines: list[dict]) -> list[d
             if freq_pct >= MIN_FREQUENCY_PCT:
                 results.append({
                     "type": "missing",
-                    "n3_id": n3, "n3_name": row["n3_name"],
-                    "n4_id": row["n4_id"], "n4_name": row["n4_name"],
+                    "n3_id": n3, "n4_id": row["n4_id"],
                     "order_count": row["order_count"],
                     "total_orders": row["total_orders"],
                     "frequency_pct": freq_pct,
@@ -57,8 +56,7 @@ def analyze_forgotten(profile_n4: list[dict], order_lines: list[dict]) -> list[d
             if avg_qty > 0 and current_qty < avg_qty * LOW_QTY_RATIO:
                 results.append({
                     "type": "low_quantity",
-                    "n3_id": n3, "n3_name": row["n3_name"],
-                    "n4_id": row["n4_id"], "n4_name": row["n4_name"],
+                    "n3_id": n3, "n4_id": row["n4_id"],
                     "order_count": row["order_count"],
                     "total_orders": row["total_orders"],
                     "frequency_pct": freq_pct,
@@ -87,8 +85,7 @@ def analyze_niche(
 
         if n3 not in order_n3 and niche_pct >= MIN_NICHE_PCT:
             results.append({
-                "n3_id": n3, "n3_name": row["n3_name"],
-                "n4_id": row["n4_id"], "n4_name": row["n4_name"],
+                "n3_id": n3, "n4_id": row["n4_id"],
                 "niche": niche,
                 "niche_pct": niche_pct,
                 "client_count": row["client_count"],

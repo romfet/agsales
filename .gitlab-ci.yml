@@ -27,7 +27,7 @@ test:
     - docker run --rm --network "ci-$CI_PIPELINE_ID"
         -e DATABASE_URL=postgresql+psycopg://agsales:agsales@db:5432/agsales
         agsales-backend:ci
-        sh -c "alembic -c backend/alembic.ini upgrade head && python -m pytest -c backend/pytest.ini"
+        sh -c "python -m backend.db.schema && python -m pytest -c backend/pytest.ini"
   after_script:
     - docker rm -f "pg-$CI_PIPELINE_ID" 2>/dev/null || true
     - docker network rm "ci-$CI_PIPELINE_ID" 2>/dev/null || true
