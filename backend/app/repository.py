@@ -148,6 +148,11 @@ async def get_client_bought_item_guids(client_guid: str) -> set[str]:
 
 # --- Aggregates -----------------------------------------------------------
 
+async def count_order_lines() -> int:
+    async with engine.connect() as conn:
+        return int(await conn.scalar(text("SELECT count(*) FROM order_lines")))
+
+
 async def refresh_aggregates() -> None:
     """Rebuild all materialized views, respecting dependency order.
 

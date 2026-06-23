@@ -83,8 +83,8 @@ async def test_ingest_then_analyze_end_to_end():
         assert ing.status_code == 200
         assert ing.json()["accepted"] == 2
 
-        rf = await c.post("/api/ingest/refresh")
-        assert rf.status_code == 200
+        cm = await c.post("/api/ingest/commit")
+        assert cm.status_code == 200 and cm.json()["rows"] > 0
 
         # draft order has only subgroup A → B should surface as forgotten
         an = await c.post(

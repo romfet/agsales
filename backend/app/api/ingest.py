@@ -1,7 +1,9 @@
 """Endpoint 1 — ingest: 1С pushes the order history; we write it to the DB.
 
-Requires the ``ingest`` scope. Aggregates are NOT rebuilt per request (too
-expensive) — the worker refreshes them on an interval; ``/refresh`` forces it.
+Requires the ``ingest`` scope. Aggregates are NOT rebuilt per batch (too
+expensive). After the daily load 1С calls ``/commit`` to finalize (rebuild
+aggregates); the worker also rebuilds them on an interval, and ``/refresh``
+forces it on demand.
 """
 from fastapi import APIRouter, Depends
 
@@ -21,8 +23,15 @@ async def ingest_order_lines(body: IngestOrderLinesIn):
     return await repo.ingest_order_lines([i.model_dump() for i in body.items])
 
 
+@router.post("/commit")
+async def ingest_commit():
+    """Finalize the daily load: rebuild aggregates from the current data."""
+    await repo.refresh_aggregates()
+    return {"status": "ok", "rows": await repo.count_order_lines()}
+
+
 @router.post("/refresh")
 async def ingest_refresh():
-    """Force an immediate aggregate rebuild (otherwise the worker does it on a timer)."""
+    """Force an immediate aggregate rebuild (ops/dev; the worker also does it on a timer)."""
     await repo.refresh_aggregates()
     return {"status": "ok"}

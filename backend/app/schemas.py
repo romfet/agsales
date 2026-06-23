@@ -69,7 +69,6 @@ class ForgottenItem(BaseModel):
     type: str
     n3: str
     n4: str | None = None
-    item_guid: str | None = None
     order_count: int
     total_orders: int
     frequency_pct: float
@@ -81,7 +80,6 @@ class ForgottenItem(BaseModel):
 class NicheItem(BaseModel):
     n3: str
     n4: str | None = None
-    item_guid: str | None = None
     niche: str
     niche_pct: float
     client_count: int
