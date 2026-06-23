@@ -1,0 +1,44 @@
+# CI/CD для self-hosted GitLab.
+# Раннер: shell-executor на хосте 192.168.2.130, тег `agsales-host`, с Docker + docker compose.
+# CI/CD Variables (Settings → CI/CD → Variables, masked + protected):
+#   AUTH_JWT_SECRET  — секрет подписи токенов (openssl rand -hex 32)
+#   AUTH_CLIENTS     — JSON клиентов, напр.
+#                      [{"client_id":"onec","client_secret":"…","scopes":["ingest","analyze"]}]
+
+stages:
+  - test
+  - deploy
+
+# --- Тесты: эфемерный postgres + pytest в образе. Прод-стек НЕ трогаем. ---
+test:
+  stage: test
+  tags: [agsales-host]
+  script:
+    - docker build -f backend/Dockerfile -t agsales-backend:ci .
+    - docker network create "ci-$CI_PIPELINE_ID"
+    - docker run -d --name "pg-$CI_PIPELINE_ID" --network "ci-$CI_PIPELINE_ID" --network-alias db
+        -e POSTGRES_USER=agsales -e POSTGRES_PASSWORD=agsales -e POSTGRES_DB=agsales postgres:16
+    - for i in $(seq 1 30); do docker exec "pg-$CI_PIPELINE_ID" pg_isready -U agsales && break; sleep 1; done
+    - docker run --rm --network "ci-$CI_PIPELINE_ID"
+        -e DATABASE_URL=postgresql+psycopg://agsales:agsales@db:5432/agsales
+        agsales-backend:ci
+        sh -c "alembic -c backend/alembic.ini upgrade head && python -m pytest -c backend/pytest.ini"
+  after_script:
+    - docker rm -f "pg-$CI_PIPELINE_ID" 2>/dev/null || true
+    - docker network rm "ci-$CI_PIPELINE_ID" 2>/dev/null || true
+
+# --- Деплой на этот же хост через docker compose (только master) ---
+deploy:
+  stage: deploy
+  tags: [agsales-host]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master"'
+  environment:
+    name: production
+  resource_group: production        # не пересекать параллельные деплои
+  script:
+    # секреты из CI/CD Variables → .env (его читает docker-compose)
+    - printf 'AUTH_JWT_SECRET=%s\n'  "$AUTH_JWT_SECRET" >  .env
+    - printf 'AUTH_CLIENTS=%s\n'     "$AUTH_CLIENTS"    >> .env
+    - docker compose up -d --build
+    - docker compose ps
