@@ -5,6 +5,10 @@
 #   AUTH_CLIENTS     — JSON клиентов, напр.
 #                      [{"client_id":"onec","client_secret":"…","scopes":["ingest","analyze"]}]
 
+# docker-executor: образ с Docker CLI + compose; команды идут в хостовый Docker.
+default:
+  image: docker:27
+
 stages:
   - test
   - deploy
