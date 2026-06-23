@@ -14,8 +14,8 @@ services:
       POSTGRES_USER: agsales
       POSTGRES_PASSWORD: agsales
       POSTGRES_DB: agsales
-    ports:
-      - "127.0.0.1:5433:5432"   # host 5432 is taken by a local Postgres
+    # БД доступна только внутри сети compose (db:5432); на хост не пробрасываем.
+    # Для локальной отладки можно временно добавить: ports: ["127.0.0.1:5433:5432"].
     volumes:
       - agsales_pgdata:/var/lib/postgresql/data
     healthcheck:
