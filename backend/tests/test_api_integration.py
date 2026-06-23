@@ -16,7 +16,7 @@ pytestmark = pytest.mark.integration
 
 _DB = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
 
-# Deterministic guid of mock client #1 (mock_source seed=42).
+# Deterministic client_id of mock client #1 (mock_source seed=42).
 KNOWN_CLIENT = "clnt0000-0000-0000-0000-000000000000"
 
 
@@ -45,53 +45,41 @@ async def test_analyze_contract():
     async with _client() as c:
         r = await c.post(
             "/api/analyze",
-            json={"client_guid": KNOWN_CLIENT, "lines": [{"n3": "x", "qty": 1}]},
+            json={"client_id": KNOWN_CLIENT, "lines": [{"n3_id": "x", "qty": 1}]},
         )
     assert r.status_code == 200
-    body = r.json()
-    assert {"analysis1_forgotten", "analysis2_niche", "niche"} <= set(body)
+    assert {"analysis1_forgotten", "analysis2_niche", "niche"} <= set(r.json())
 
 
 async def test_analyze_rejects_empty_order():
     async with _client() as c:
-        r = await c.post("/api/analyze", json={"client_guid": KNOWN_CLIENT, "lines": []})
+        r = await c.post("/api/analyze", json={"client_id": KNOWN_CLIENT, "lines": []})
     assert r.status_code == 400
 
 
 async def test_ingest_then_analyze_end_to_end():
-    """Push an order via ingest, refresh, then analyze resolves item_guid → n3 and
+    """Push an order via ingest, refresh, then analyze resolves n4_id → n3_id and
     flags the omitted subgroup as 'forgotten'."""
-    client = "cli-test-0001"
-    order = {
-        "items": [
-            {
-                "order_guid": "ord-test-0001", "order_num": "T-1",
-                "order_date": "2026-06-01", "client_guid": client,
-                "client_name": "ТестКлиент", "niche": "ТестНиша",
-                "n3": "ТЕСТ.A", "n4": "Товар A", "item_guid": "itm-A", "qty": 3,
-            },
-            {
-                "order_guid": "ord-test-0001", "order_num": "T-1",
-                "order_date": "2026-06-01", "client_guid": client,
-                "client_name": "ТестКлиент", "niche": "ТестНиша",
-                "n3": "ТЕСТ.B", "n4": "Товар B", "item_guid": "itm-B", "qty": 4,
-            },
-        ],
-    }
+    def line(n3, n4):
+        return {
+            "order_num": "T-1", "order_date": "2026-06-01",
+            "client_id": "cli-test-0001", "client_name": "ТестКлиент", "niche": "ТестНиша",
+            "n3_id": n3, "n3_name": n3 + " name", "n4_id": n4, "n4_name": n4 + " name", "qty": 3,
+        }
     async with _client() as c:
-        ing = await c.post("/api/ingest/order-lines", json=order)
-        assert ing.status_code == 200
-        assert ing.json()["accepted"] == 2
+        ing = await c.post("/api/ingest/order-lines",
+                           json={"items": [line("n3-A", "n4-A"), line("n3-B", "n4-B")]})
+        assert ing.status_code == 200 and ing.json()["accepted"] == 2
 
         cm = await c.post("/api/ingest/commit")
         assert cm.status_code == 200 and cm.json()["rows"] > 0
 
-        # draft order has only subgroup A → B should surface as forgotten
+        # draft order has only subgroup n3-A → n3-B should surface as forgotten
         an = await c.post(
             "/api/analyze",
-            json={"client_guid": client, "lines": [{"item_guid": "itm-A", "qty": 3}]},
+            json={"client_id": "cli-test-0001", "lines": [{"n4_id": "n4-A", "qty": 3}]},
         )
     assert an.status_code == 200
     body = an.json()
     assert body["niche"] == "ТестНиша"
-    assert any(r["n3"] == "ТЕСТ.B" for r in body["analysis1_forgotten"])
+    assert any(r["n3_id"] == "n3-B" for r in body["analysis1_forgotten"])

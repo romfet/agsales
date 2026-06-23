@@ -4,6 +4,9 @@ This metadata is intentionally NOT handed to Alembic (the schema is created by a
 hand-written migration that includes materialized views, which Alembic cannot
 autogenerate). These objects exist only so the repository can build typed,
 parameterized Core queries against them.
+
+Identity is by GUID: client → client_id, subgroup → n3_id, product → n4_id.
+Names (client_name, n3_name, n4_name) are display-only. Order key = order_num.
 """
 from sqlalchemy import (
     BigInteger,
@@ -19,22 +22,20 @@ from sqlalchemy import (
 
 metadata = MetaData()
 
-# --- Synced raw data ---
+# --- Synced raw data: one row per order line (order × product) ---
 order_lines = Table(
     "order_lines",
     metadata,
     Column("id", BigInteger, primary_key=True),
-    Column("order_guid", Text, nullable=False),
-    Column("order_num", Text, nullable=False),
+    Column("order_num", Text, nullable=False),       # ЗаказНомер — order key
     Column("order_date", Date),
-    Column("client_guid", Text, nullable=False),
-    Column("client_name", Text, nullable=False),
-    Column("niche", Text),
-    Column("n1", Text),
-    Column("n2", Text),
-    Column("n3", Text, nullable=False),
-    Column("n4", Text, nullable=False),
-    Column("item_guid", Text, nullable=False),
+    Column("client_id", Text, nullable=False),        # GUID
+    Column("client_name", Text),
+    Column("niche", Text),                            # Отрасль
+    Column("n3_id", Text, nullable=False),            # GUID подгруппы
+    Column("n3_name", Text),
+    Column("n4_id", Text, nullable=False),            # GUID товара
+    Column("n4_name", Text),
     Column("qty", Numeric, nullable=False),
 )
 
@@ -48,11 +49,11 @@ sync_state = Table(
     Column("error", Text),
 )
 
-# --- Materialized aggregates (rebuilt on every sync) ---
+# --- Materialized aggregates (rebuilt on every refresh) ---
 client_dim = Table(
     "client_dim",
     metadata,
-    Column("client_guid", Text, primary_key=True),
+    Column("client_id", Text, primary_key=True),
     Column("client_name", Text),
     Column("niche", Text),
     Column("total_orders", Integer),
@@ -69,18 +70,20 @@ niche_dim = Table(
 products = Table(
     "products",
     metadata,
-    Column("n3", Text),
-    Column("n4", Text),
-    Column("item_guid", Text),
+    Column("n4_id", Text),
+    Column("n4_name", Text),
+    Column("n3_id", Text),
+    Column("n3_name", Text),
 )
 
 client_profile_n4 = Table(
     "client_profile_n4",
     metadata,
-    Column("client_guid", Text),
-    Column("n3", Text),
-    Column("n4", Text),
-    Column("item_guid", Text),
+    Column("client_id", Text),
+    Column("n3_id", Text),
+    Column("n3_name", Text),
+    Column("n4_id", Text),
+    Column("n4_name", Text),
     Column("order_count", Integer),
     Column("total_qty", Numeric),
     Column("total_orders", Integer),
@@ -92,9 +95,10 @@ niche_profile_n4 = Table(
     "niche_profile_n4",
     metadata,
     Column("niche", Text),
-    Column("n3", Text),
-    Column("n4", Text),
-    Column("item_guid", Text),
+    Column("n3_id", Text),
+    Column("n3_name", Text),
+    Column("n4_id", Text),
+    Column("n4_name", Text),
     Column("client_count", Integer),
     Column("order_count", Integer),
     Column("total_qty", Numeric),

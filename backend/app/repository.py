@@ -1,11 +1,8 @@
 """Async data-access layer over PostgreSQL.
 
-Two responsibilities in the slimmed (two-endpoint) service:
-- **Ingest writes** — upsert the pushed 1С feed into the raw tables.
-- **Analyze reads** — read per-client/per-niche aggregates from materialized
-  views (never raw rows), plus resolve item_guid → n3 for the draft order.
-
-Aggregates are rebuilt by ``refresh_aggregates`` (the worker, on an interval).
+Ingest writes the pushed 1С feed (delta, upsert by order_num) into order_lines;
+analyze reads per-client/per-niche aggregates from materialized views. Identity
+is by GUID (client_id / n3_id / n4_id); names are display-only.
 """
 from __future__ import annotations
 
@@ -20,7 +17,6 @@ from backend.app.db.session import engine
 
 
 def _f(v: Any) -> float | None:
-    """Decimal/None -> float/None for JSON-friendly output."""
     if v is None:
         return None
     if isinstance(v, Decimal):
@@ -30,9 +26,10 @@ def _f(v: Any) -> float | None:
 
 def _row_to_client_profile(r) -> dict:
     return {
-        "n3": r.n3,
-        "n4": r.n4,
-        "item_guid": r.item_guid,
+        "n3_id": r.n3_id,
+        "n3_name": r.n3_name,
+        "n4_id": r.n4_id,
+        "n4_name": r.n4_name,
         "order_count": int(r.order_count),
         "total_orders": int(r.total_orders),
         "frequency_pct": _f(r.frequency_pct),
@@ -42,9 +39,10 @@ def _row_to_client_profile(r) -> dict:
 
 def _row_to_niche_profile(r) -> dict:
     return {
-        "n3": r.n3,
-        "n4": r.n4,
-        "item_guid": r.item_guid,
+        "n3_id": r.n3_id,
+        "n3_name": r.n3_name,
+        "n4_id": r.n4_id,
+        "n4_name": r.n4_name,
         "client_count": int(r.client_count),
         "total_clients_in_niche": int(r.total_clients_in_niche),
         "order_count": int(r.order_count),
@@ -55,38 +53,36 @@ def _row_to_niche_profile(r) -> dict:
     }
 
 
-# --- Ingest (1С feed → raw tables) ---------------------------------------
+# --- Ingest (1С feed → raw table) ----------------------------------------
 
-_ORDER_FIELDS = ("order_guid", "order_num", "order_date", "client_guid",
-                 "client_name", "niche", "n1", "n2", "n3", "n4", "item_guid", "qty")
+_ORDER_FIELDS = ("order_num", "order_date", "client_id", "client_name", "niche",
+                 "n3_id", "n3_name", "n4_id", "n4_name", "qty")
 
 
 def _order_row(it: dict) -> dict:
     row = {k: it.get(k) for k in _ORDER_FIELDS}
     od = row.get("order_date")
     if isinstance(od, str) and od:
-        row["order_date"] = date.fromisoformat(od)  # ISO from the 1С feed
+        row["order_date"] = date.fromisoformat(od)
     elif isinstance(od, date):
-        row["order_date"] = od  # date object from the mock seeder
+        row["order_date"] = od
     else:
         row["order_date"] = None
     return row
 
 
 async def ingest_order_lines(items: list[dict]) -> dict:
-    """Upsert pushed order lines. Grain is the document: every order_guid in the
-    batch is replaced (delete-insert), so adding/changing/removing lines and
-    full-order deletion (``deleted``) are all handled. Live aggregates are
-    rebuilt separately by the worker."""
+    """Upsert pushed order lines. Grain is the document (order_num): every
+    order_num in the batch is replaced (delete-insert); ``deleted`` removes it."""
     by_order: dict[str, list[dict]] = {}
     deleted: set[str] = set()
     for it in items:
-        og = it["order_guid"]
+        on = it["order_num"]
         if it.get("deleted"):
-            deleted.add(og)
-            by_order.pop(og, None)
+            deleted.add(on)
+            by_order.pop(on, None)
             continue
-        by_order.setdefault(og, []).append(it)
+        by_order.setdefault(on, []).append(it)
 
     affected = set(by_order) | deleted
     rows = [_order_row(it) for lines in by_order.values() for it in lines]
@@ -94,7 +90,7 @@ async def ingest_order_lines(items: list[dict]) -> dict:
     async with engine.begin() as conn:
         if affected:
             await conn.execute(
-                delete(t.order_lines).where(t.order_lines.c.order_guid.in_(affected))
+                delete(t.order_lines).where(t.order_lines.c.order_num.in_(affected))
             )
         if rows:
             await conn.execute(insert(t.order_lines), rows)
@@ -103,29 +99,26 @@ async def ingest_order_lines(items: list[dict]) -> dict:
 
 # --- Analyze reads --------------------------------------------------------
 
-async def get_client_niche(client_guid: str) -> str | None:
-    q = select(t.client_dim.c.niche).where(t.client_dim.c.client_guid == client_guid)
+async def get_client_niche(client_id: str) -> str | None:
+    q = select(t.client_dim.c.niche).where(t.client_dim.c.client_id == client_id)
     async with engine.connect() as conn:
         return (await conn.execute(q)).scalar_one_or_none()
 
 
-async def get_n3_for_items(item_guids: list[str]) -> dict[str, str]:
-    """Resolve item_guid → n3 (subgroup) from the synced catalog — the analyzer
-    matches the draft order at N3 level."""
-    if not item_guids:
+async def get_n3_for_n4(n4_ids: list[str]) -> dict[str, str]:
+    """Resolve n4_id → n3_id from the synced catalog (analyzer matches at N3)."""
+    if not n4_ids:
         return {}
-    q = select(t.products.c.item_guid, t.products.c.n3).where(
-        t.products.c.item_guid.in_(item_guids)
+    q = select(t.products.c.n4_id, t.products.c.n3_id).where(
+        t.products.c.n4_id.in_(n4_ids)
     )
     async with engine.connect() as conn:
         rows = (await conn.execute(q)).all()
-    return {r.item_guid: r.n3 for r in rows}
+    return {r.n4_id: r.n3_id for r in rows}
 
 
-async def get_client_profile_n4(client_guid: str) -> list[dict]:
-    q = select(t.client_profile_n4).where(
-        t.client_profile_n4.c.client_guid == client_guid
-    )
+async def get_client_profile_n4(client_id: str) -> list[dict]:
+    q = select(t.client_profile_n4).where(t.client_profile_n4.c.client_id == client_id)
     async with engine.connect() as conn:
         rows = (await conn.execute(q)).all()
     return [_row_to_client_profile(r) for r in rows]
@@ -138,9 +131,9 @@ async def get_niche_profile_n4(niche: str) -> list[dict]:
     return [_row_to_niche_profile(r) for r in rows]
 
 
-async def get_client_bought_item_guids(client_guid: str) -> set[str]:
-    q = select(distinct(t.client_profile_n4.c.item_guid)).where(
-        t.client_profile_n4.c.client_guid == client_guid
+async def get_client_bought_n4_ids(client_id: str) -> set[str]:
+    q = select(distinct(t.client_profile_n4.c.n4_id)).where(
+        t.client_profile_n4.c.client_id == client_id
     )
     async with engine.connect() as conn:
         return {r[0] for r in (await conn.execute(q)).all()}
@@ -154,14 +147,8 @@ async def count_order_lines() -> int:
 
 
 async def refresh_aggregates() -> None:
-    """Rebuild all materialized views, respecting dependency order.
-
-    Already-populated views are refreshed CONCURRENTLY so they stay readable to
-    the API during the rebuild (their unique indexes, created in migration 0001,
-    make this possible); the first, unpopulated build falls back to a plain
-    REFRESH. CONCURRENTLY cannot run inside a transaction block, so this uses an
-    AUTOCOMMIT connection (one committed statement per view).
-    """
+    """Rebuild all materialized views in dependency order (CONCURRENTLY once
+    populated; AUTOCOMMIT since CONCURRENTLY can't run in a transaction)."""
     ac_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
     async with ac_engine.connect() as conn:
         for mv in t.MATERIALIZED_VIEWS:

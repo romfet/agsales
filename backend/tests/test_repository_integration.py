@@ -1,9 +1,7 @@
 """Integration tests against a real PostgreSQL.
 
-Skipped automatically unless a DB is reachable. Requires migrations applied
-(``alembic -c backend/alembic.ini upgrade head``) on the target database.
-
-    pytest -m integration
+Skipped unless a DB is reachable. Requires migrations applied
+(``alembic -c backend/alembic.ini upgrade head``).
 """
 import os
 
@@ -16,7 +14,7 @@ pytestmark = pytest.mark.integration
 
 _DB = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
 
-# Deterministic guid of mock client #1 (mock_source seed=42).
+# Deterministic client_id of mock client #1 (mock_source seed=42).
 KNOWN_CLIENT = "clnt0000-0000-0000-0000-000000000000"
 
 
@@ -32,18 +30,17 @@ async def _seeded():
 
 
 async def test_client_niche_and_profile():
-    niche = await repo.get_client_niche(KNOWN_CLIENT)
-    assert niche
+    assert await repo.get_client_niche(KNOWN_CLIENT)
     profile = await repo.get_client_profile_n4(KNOWN_CLIENT)
     assert profile
     assert all(0 <= r["frequency_pct"] <= 100 for r in profile)
 
 
-async def test_n3_resolution_from_catalog():
+async def test_n4_to_n3_resolution_from_catalog():
     profile = await repo.get_client_profile_n4(KNOWN_CLIENT)
-    item_guid = profile[0]["item_guid"]
-    resolved = await repo.get_n3_for_items([item_guid])
-    assert resolved.get(item_guid) == profile[0]["n3"]
+    n4_id = profile[0]["n4_id"]
+    resolved = await repo.get_n3_for_n4([n4_id])
+    assert resolved.get(n4_id) == profile[0]["n3_id"]
 
 
 async def test_analyze_end_to_end():

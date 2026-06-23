@@ -1,4 +1,8 @@
-"""Pydantic models = the API contract (request validation + response shape)."""
+"""Pydantic models = the API contract (request validation + response shape).
+
+Identity by GUID: client_id, n3_id, n4_id. Names (*_name) are display-only.
+Order key = order_num.
+"""
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
@@ -19,23 +23,17 @@ class TokenOut(BaseModel):
 
 # --- Ingest (1С → us; endpoint 1) ---
 class IngestOrderLine(BaseModel):
-    """One order-line record (grain: order × item), pushed by 1С.
+    """One order-line record (grain: order × product), pushed by 1С (delta)."""
 
-    Flat/denormalized — 1С joins on its side. A record with ``deleted=true``
-    (or simply an order_guid no longer sent with lines) removes that order.
-    """
-
-    order_guid: str
     order_num: str
     order_date: str | None = None  # ISO YYYY-MM-DD
-    client_guid: str
-    client_name: str
+    client_id: str
+    client_name: str | None = None
     niche: str | None = None
-    n1: str | None = None
-    n2: str | None = None
-    n3: str
-    n4: str
-    item_guid: str
+    n3_id: str
+    n3_name: str | None = None
+    n4_id: str
+    n4_name: str | None = None
     qty: float
     deleted: bool = False
 
@@ -51,24 +49,25 @@ class IngestResult(BaseModel):
 
 # --- Analyze (operator → us; endpoint 2) ---
 class OrderLineIn(BaseModel):
-    """A line of the current (draft) order. The analyzer works at N3 level:
-    send ``item_guid`` (n3 resolved server-side) or ``n3`` directly; ``qty``
-    feeds the under-ordering check."""
+    """A line of the current (draft) order. Analyzer works at N3 level: send
+    ``n4_id`` (n3 resolved server-side) or ``n3_id`` directly."""
 
-    item_guid: str | None = None
-    n3: str | None = None
+    n4_id: str | None = None
+    n3_id: str | None = None
     qty: float = 0.0
 
 
 class AnalyzeIn(BaseModel):
-    client_guid: str
+    client_id: str
     lines: list[OrderLineIn] = Field(default_factory=list)
 
 
 class ForgottenItem(BaseModel):
     type: str
-    n3: str
-    n4: str | None = None
+    n3_id: str
+    n3_name: str | None = None
+    n4_id: str | None = None
+    n4_name: str | None = None
     order_count: int
     total_orders: int
     frequency_pct: float
@@ -78,8 +77,10 @@ class ForgottenItem(BaseModel):
 
 
 class NicheItem(BaseModel):
-    n3: str
-    n4: str | None = None
+    n3_id: str
+    n3_name: str | None = None
+    n4_id: str | None = None
+    n4_name: str | None = None
     niche: str
     niche_pct: float
     client_count: int
@@ -93,7 +94,7 @@ class NicheItem(BaseModel):
 
 
 class AnalyzeOut(BaseModel):
-    client_guid: str
+    client_id: str
     niche: str | None = None
     analysis1_forgotten: list[ForgottenItem]
     analysis2_niche: list[NicheItem]
