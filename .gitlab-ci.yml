@@ -42,8 +42,12 @@ deploy:
     name: production
   resource_group: production        # не пересекать параллельные деплои
   script:
+    # CLEAN=true (переменная пайплайна) — пересоздать том БД с нуля по schema.sql.
+    # Обычные деплои этого НЕ делают (данные сохраняются).
+    - 'if [ "$CLEAN" = "true" ]; then echo "CLEAN: wiping DB volume"; docker compose down -v; fi'
     # секреты из CI/CD Variables → .env (его читает docker-compose)
     - printf 'AUTH_JWT_SECRET=%s\n'  "$AUTH_JWT_SECRET" >  .env
     - printf 'AUTH_CLIENTS=%s\n'     "$AUTH_CLIENTS"    >> .env
     - docker compose up -d --build
     - docker compose ps
+    - docker compose exec -T db psql -U agsales -d agsales -c "\d order_lines" || true
