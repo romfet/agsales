@@ -18,6 +18,10 @@ test:
   stage: test
   tags: [docker]
   allow_failure: true          # не блокировать деплой из-за флейка CI-докера
+  rules:
+    - if: '$INSPECT == "true"'   # mini-пайплайн осмотра — тесты не нужны
+      when: never
+    - when: on_success
   script:
     - docker build -f backend/Dockerfile -t agsales-backend:ci .
     - docker network create "ci-$CI_PIPELINE_ID"
@@ -37,6 +41,8 @@ deploy:
   stage: deploy
   tags: [docker]
   rules:
+    - if: '$INSPECT == "true"'   # mini-пайплайн осмотра — без деплоя
+      when: never
     - if: '$CI_COMMIT_BRANCH == "master"'
   environment:
     name: production
@@ -51,3 +57,12 @@ deploy:
     - docker compose up -d --build
     - docker compose ps
     - docker compose exec -T db psql -U agsales -d agsales -c "\d order_lines" || true
+
+# --- mini: только осмотр схемы живой БД (INSPECT=true), без test/deploy ---
+inspect:
+  stage: deploy
+  tags: [docker]
+  rules:
+    - if: '$INSPECT == "true"'
+  script:
+    - docker compose exec -T db psql -U agsales -d agsales -c "\d order_lines"
