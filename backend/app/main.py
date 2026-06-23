@@ -9,11 +9,20 @@ calls protected endpoints with it (scopes: ingest / analyze). See core/security.
 Run (from repo root, DB up):
     uvicorn backend.app.main:app --port 5050
 """
+import logging
+
 from fastapi import FastAPI
 
 from backend.app.api import analysis, auth, ingest
+from backend.app.core.config import settings
 
 app = FastAPI(title="AG Sales Analytics API", version="0.3.0")
+
+if not settings.auth_jwt_secret:
+    logging.getLogger("uvicorn.error").warning(
+        "AUTH DISABLED: AUTH_JWT_SECRET is empty — the API is OPEN. "
+        "Set it (and AUTH_CLIENTS) before exposing the service publicly."
+    )
 
 for module in (auth, ingest, analysis):
     app.include_router(module.router)

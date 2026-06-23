@@ -44,7 +44,9 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg://agsales:agsales@db:5432/agsales
-      # AUTH_JWT_SECRET + AUTH_CLIENTS unset → auth open (local/dev only).
+      # Из .env (рядом с docker-compose.yml). ПУСТО = авторизация открыта (только локально!).
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
+      AUTH_CLIENTS: ${AUTH_CLIENTS:-[]}
     ports:
       - "127.0.0.1:5050:5050"
     depends_on:
