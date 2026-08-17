@@ -1,79 +1,92 @@
-# Backend (refactor)
+# Backend
 
-New backend for the sales-analytics service. Replaces the Excel-upload + in-memory
-pandas MVP with a PostgreSQL-backed, async data layer fed by 1С (read-only).
+Sales-analytics service. Replaces the Excel-upload + in-memory pandas MVP (repo
+root) with a PostgreSQL-backed, async data layer fed by 1С (read-only toward 1С).
 
-**Status: Phase 1 — data layer on mock data.** The 1С client and FastAPI/React
-layers come in phases 2–3. See the staged plan in the conversation and the 1С
-contract in [`../docs/onec_contract.md`](../docs/onec_contract.md).
+A slim **two-endpoint push service**: 1С pushes order history to `/api/ingest/*`;
+an operator posts a draft order to `/api/analyze` and gets recommendations back.
+Identity is by **GUID** (`client_id` / `n3_id` / `n4_id`); names are display-only
+(1С resolves them). See the 1С contract in
+[`../docs/onec_integration.md`](../docs/onec_integration.md) (+ `onec_api.md`).
 
-## Architecture (phase 1)
+## Architecture
 
 ```
-mock_source ──► order_lines (Postgres) ──► materialized aggregates
-                                              client_dim / niche_dim / products
-                                              client_profile_n4 / niche_profile_n4
-                                                        │
-        services.analyze() ── domain/analyzer (pure rules) ◄── repository (async SQLAlchemy Core)
+1С ──POST /api/ingest/order-lines (delta)──► order_lines (raw) ──commit/worker──► materialized views
+                                                                                   client_dim / niche_dim / products
+                                                                                   client_profile_n4 / niche_profile_n4
+                                                                                        │
+operator ──POST /api/analyze {client + draft lines}──► services.analyze ──► domain/analyzer (pure) ◄── repository (async SQLAlchemy Core)
 ```
 
-Aggregates are **materialized on sync** and read per-request scoped to one
-client/niche — no full-dataset work at request time, no pandas. Identity is by
-**GUID** (client/item/order), names are for display only.
+Aggregates are **materialized on sync** (rebuilt after a load's `/commit`, and by
+the worker on an interval), then read per-request scoped to one client/niche — no
+full-dataset work at request time, no pandas.
 
 ## Run locally
 
-From the repo root:
+The whole stack (Postgres + schema/seed + API + worker) is the **repo-root**
+`docker-compose.yml`. From the repo root:
+
+```bash
+docker compose up -d --build        # OpenAPI docs at http://localhost:5050/docs
+```
+
+`migrate` applies the schema and seeds **mock** history until the real 1С feed
+lands. `docker compose down -v` wipes the DB volume (needed for schema changes).
+
+### Or run pieces by hand (from the repo root)
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r backend/requirements.txt
-
-# 1. Postgres
-docker compose -f backend/docker-compose.yml up -d
-
-# 2. Schema (tables + materialized views)
 export DATABASE_URL="postgresql+psycopg://agsales:agsales@localhost:5432/agsales"
-alembic -c backend/alembic.ini upgrade head
 
-# 3. Seed mock data + refresh aggregates
-python -m backend.sync.seed_mock
-
-# 4. Run the API (OpenAPI docs at /docs)
-uvicorn backend.app.main:app --reload --port 5050
+docker compose -f backend/docker-compose.yml up -d   # 1. Postgres only
+python -m backend.db.schema                           # 2. Tables + materialized views (idempotent; no migrations)
+python -m backend.sync.seed_mock                      # 3. Seed mock data + refresh aggregates
+uvicorn backend.app.main:app --reload --port 5050     # 4. API
+python -m backend.sync.worker                         # (optional) aggregate-refresh loop
 ```
 
-## API (phase 2, scaffolded)
+Schema lives entirely in `db/schema.sql` — **no Alembic / no migrations**. To
+change it, edit the SQL and recreate the DB volume.
 
-FastAPI + Pydantic over `repository`/`services`. OpenAPI at `/docs` is the contract
-for the React SPA (phase 3). Auth is a bearer-token placeholder (`API_AUTH_TOKEN`)
-pending the SSO/OIDC decision — empty token = open (dev only).
+## API
 
-| Method | Path | Purpose |
-|---|---|---|
-| GET  | `/api/clients` | client list |
-| GET  | `/api/clients/{guid}/info` | niche + total orders |
-| GET  | `/api/products/n3` · `/api/products/n4?n3=` | catalog |
-| GET  | `/api/orders/search?query=&client_guid=` | order search |
-| GET  | `/api/orders/{order_num}` | order lines |
-| POST | `/api/analyze` | both analyses |
-| GET  | `/api/sync/status` | last sync info |
+FastAPI + Pydantic over `services` / `repository`. OpenAPI at `/docs`.
+
+| Method | Path | Scope | Purpose |
+|---|---|---|---|
+| POST | `/api/auth/token`         | —         | exchange `client_id`+`client_secret` for a scoped JWT |
+| POST | `/api/ingest/order-lines` | `ingest`  | push order-line delta (upsert by `order_num`) |
+| POST | `/api/ingest/commit`      | `ingest`  | finalize a load: rebuild aggregates |
+| POST | `/api/ingest/refresh`     | `ingest`  | force an immediate aggregate rebuild |
+| POST | `/api/analyze`            | `analyze` | both analyses for a client + draft order |
+| GET  | `/health`                 | —         | liveness |
+
+**Auth** is a token-request flow (`core/security.py`): a client POSTs its
+`client_id`+`client_secret`, gets a server-signed HS256 JWT carrying its scopes,
+then calls protected endpoints with `Authorization: Bearer <token>`. Clients are
+registered via `AUTH_CLIENTS` (JSON). **Empty `AUTH_JWT_SECRET` = auth OPEN
+(dev only).**
 
 ## Tests
 
 ```bash
-# Pure rule tests — no DB:
-pytest backend/tests/test_analyzer.py
+# Pure rule/auth tests — no DB:
+pytest -c backend/pytest.ini backend/tests/test_analyzer.py backend/tests/test_auth.py
 
-# Integration (needs DB up + migrated + DATABASE_URL):
-pytest -m integration
+# Integration (needs DB up + schema applied + DATABASE_URL/TEST_DATABASE_URL):
+python -m backend.db.schema
+pytest -c backend/pytest.ini -m integration
 ```
 
 ## What replaces what
 
-| Old | New |
+| Old (repo-root MVP) | New |
 |---|---|
-| `data_store.py` (pandas globals) | `app/repository.py` (async SQLAlchemy Core) + materialized views |
-| `analyzer.py` | `app/domain/analyzer.py` (pure) + `app/services.py` (orchestration) |
-| `load_excel` / `column_mapper` / `/upload*` | `sync/` (mock now; 1С HTTP-service in phase 2) |
-| stock match by N4 name | stock keyed by `item_guid` |
+| `data_store.py` (pandas globals)        | `app/repository.py` (async SQLAlchemy Core) + materialized views |
+| `analyzer.py`                           | `app/domain/analyzer.py` (pure) + `app/services.py` (orchestration) |
+| `load_excel` / `column_mapper` / `/upload*` | `sync/` (mock now; 1С push to `/api/ingest/*` in prod) |
+| stock match by N4 name                  | (dropped — no stock in the current contract) |
