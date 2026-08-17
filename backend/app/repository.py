@@ -90,6 +90,10 @@ async def ingest_order_lines(items: list[dict]) -> dict:
             )
         if rows:
             await conn.execute(insert(t.order_lines), rows)
+            # Append-only снимок присланного состояния заказов (ingested_at — по
+            # умолчанию now() в БД, одинаков для всей пачки). order_lines хранит
+            # текущий срез, versions — историю версий для диффа (сценарий №1).
+            await conn.execute(insert(t.order_line_versions), rows)
     return {"accepted": len(rows), "orders_affected": len(affected)}
 
 

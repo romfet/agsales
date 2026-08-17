@@ -7,7 +7,17 @@ Identity by GUID: client → client_id, subgroup → n3_id, product → n4_id.
 Names of subgroup/product are NOT stored (1С resolves them by GUID).
 Order key = order_num; niche = Отрасль.
 """
-from sqlalchemy import BigInteger, Column, Date, Integer, MetaData, Numeric, Table, Text
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    Date,
+    DateTime,
+    Integer,
+    MetaData,
+    Numeric,
+    Table,
+    Text,
+)
 
 metadata = MetaData()
 
@@ -15,6 +25,23 @@ order_lines = Table(
     "order_lines",
     metadata,
     Column("id", BigInteger, primary_key=True),
+    Column("order_num", Text, nullable=False),
+    Column("order_date", Date),
+    Column("client_id", Text, nullable=False),
+    Column("client_name", Text),
+    Column("niche", Text),
+    Column("n3_id", Text, nullable=False),
+    Column("n4_id", Text, nullable=False),
+    Column("qty", Numeric, nullable=False),
+)
+
+# Append-only снимки версий заказа (см. schema.sql). id/ingested_at заполняются
+# БД по умолчанию — при вставке передаём те же поля, что и в order_lines.
+order_line_versions = Table(
+    "order_line_versions",
+    metadata,
+    Column("id", BigInteger, primary_key=True),
+    Column("ingested_at", DateTime(timezone=True)),
     Column("order_num", Text, nullable=False),
     Column("order_date", Date),
     Column("client_id", Text, nullable=False),

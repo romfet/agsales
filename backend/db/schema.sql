@@ -18,6 +18,25 @@ CREATE INDEX IF NOT EXISTS ix_order_lines_order_num ON order_lines (order_num);
 CREATE INDEX IF NOT EXISTS ix_order_lines_client_id ON order_lines (client_id);
 CREATE INDEX IF NOT EXISTS ix_order_lines_niche     ON order_lines (niche);
 
+-- Версии заказа (append-only). Каждый ingest пишет сюда состояние присланных
+-- заказов, помеченное временем загрузки. Группа (order_num, ingested_at) — один
+-- полный снимок заказа; последний ingested_at = текущее состояние. Нужен для
+-- диффа «исходное→финал» (сценарий №1) — при условии, что 1С шлёт промежуточные
+-- версии живого заказа. order_lines остаётся «текущим» срезом.
+CREATE TABLE IF NOT EXISTS order_line_versions (
+    id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    ingested_at timestamptz NOT NULL DEFAULT now(),
+    order_num   text NOT NULL,
+    order_date  date,
+    client_id   text NOT NULL,
+    client_name text,
+    niche       text,
+    n3_id       text NOT NULL,
+    n4_id       text NOT NULL,
+    qty         numeric NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_olv_order ON order_line_versions (order_num, ingested_at);
+
 CREATE MATERIALIZED VIEW IF NOT EXISTS client_dim AS
     SELECT client_id,
            max(client_name)                      AS client_name,
