@@ -1,41 +1,28 @@
 -- ============================================================================
--- Фаза A: бэктест эффекта ИИ-ассистента на истории order_lines. ЧЕРНОВИК.
+-- Эффект ИИ-ассистента, сценарий №2 (строгий матч + дифф). ЧЕРНОВИК.
 -- ============================================================================
--- ⚠️ УСТАРЕВАЕТ. Это «СВОБОДНЫЙ» матч сценария №2 (любой последующий заказ с
--- рекомендованной n3). Решение 17.08.2026 (docs/effect_metrics.md §0.1): нужен
--- СТРОГИЙ матч + дифф — сматчить новый заказ с КОНКРЕТНЫМ закрытым и вычесть его
--- позиции. Плюс конверсия = «заказ создан», окно от МОМЕНТА ЗАКРЫТИЯ. Файл
--- оставлен как основа; логику матчинга нужно переписать.
--- ============================================================================
--- Спека: docs/effect_metrics.md (§0.1). Считаем СЦЕНАРИЙ №2 (новый заказ клиента
--- с рекомендованной позицией в «срок жизни рекомендации») — он полностью
--- воспроизводится из имеющихся данных, без правок контракта 1С.
+-- Модель (docs/effect_metrics.md): заказ живёт 2 раб. дня, потом закрывается.
+-- Для КАЖДОГО закрытого заказа-триггера:
+--   1) реплеим нишевые рекомендации R = популярные в нише подгруппы (n3),
+--      отсутствующие в этом заказе;
+--   2) ищем НОВЫЙ заказ того же клиента ПОСЛЕ закрытия триггера, «переделку»
+--      закрытого — по пересечению позиций (>= доли состава триггера);
+--   3) дифф: позиции нового заказа, которых НЕ было в закрытом И которые были
+--      рекомендованы → это AI-добавленные. Их тоннаж = реализованный эффект.
+-- Конверсия = «новый заказ создан» (статуса отгрузки в 1С нет). Гранулярность N3.
 --
--- Идея: рекомендатель детерминирован (analyze_niche — чистая функция), поэтому
--- для каждого исторического заказа реплеим нишевые рекомендации и проверяем, не
--- появилась ли рекомендованная подгруппа (n3_id) в ПОСЛЕДУЮЩЕМ заказе клиента
--- внутри окна. Гранулярность — N3 (как в анализаторе).
+-- НЕ подключено к backend/db/schema.py / MATERIALIZED_VIEWS — формулы к согласованию.
 --
--- НЕ подключено к backend/db/schema.py / MATERIALIZED_VIEWS — обсуждаем формулы.
--- Чтобы интегрировать: перенести CREATE-ы в schema.sql и добавить имена матвью в
--- MATERIALIZED_VIEWS (в порядке ниже — уважает зависимости).
---
--- УПРОЩЕНИЯ (осознанные, см. §0.1 и §9 спеки):
---   1. Нишевую популярность берём за ВСЮ историю, не point-in-time → есть
---      lookahead-bias. TODO Фаза A+: считать профиль на момент заказа (< trig_date).
---   2. Окно — в КАЛЕНДАРНЫХ днях (:lifetime_days). «2 рабочих дня» ≈ 4 календарных
---      как ориентир. TODO: производственный календарь (§9).
---   3. Порог рекомендации MIN_NICHE_PCT=5 захардкожен (совпадает с analyzer.py).
---   4. Дедуп: если одна и та же рекомендация «сыграла» в нескольких заказах —
---      берём ПЕРВЫЙ заказ в окне; но один новый заказ может закрыть несколько
---      рекомендаций (тоннаж посчитается по каждой n3). См. §9 п.8.
---
--- Параметры (меняются правкой SQL + REFRESH; runtime-настройка — Фаза B):
---   lifetime_days = 4   -- ≈ «срок жизни рекомендации» 2 раб. дня
---   min_niche_pct = 5   -- MIN_NICHE_PCT
+-- Упрощения/параметры (осознанные, см. §9 спеки — согласовать):
+--   lifetime_days   = 2   -- жизнь заказа до закрытия (календарные ≈ рабочие)
+--   match_window    = 5   -- сколько дней после закрытия искать «переделку»
+--   min_overlap_frac= 0.5 -- новый заказ должен повторять >= 50% позиций закрытого
+--   min_niche_pct   = 5   -- порог рекомендации (как в analyzer.py)
+-- Также: нишевая популярность — all-time (lookahead-bias, TODO point-in-time);
+-- окно — в календарных днях (TODO произв. календарь).
 -- ============================================================================
 
--- 1) Заголовки заказов: одна строка на order_num (клиент, ниша, дата) -----------
+-- 1) Заголовки заказов: одна строка на order_num --------------------------------
 CREATE MATERIALIZED VIEW IF NOT EXISTS em_order_header AS
     SELECT order_num,
            client_id,
@@ -47,13 +34,20 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS em_order_header AS
 CREATE UNIQUE INDEX IF NOT EXISTS ux_em_order_header ON em_order_header (order_num);
 CREATE INDEX IF NOT EXISTS ix_em_order_header_client ON em_order_header (client_id, order_date);
 
--- 2) Набор подгрупп (n3) в каждом заказе — для «позиция отсутствует в заказе» ----
+-- 2) Состав заказа (подгруппы n3) -----------------------------------------------
 CREATE MATERIALIZED VIEW IF NOT EXISTS em_order_n3 AS
     SELECT order_num, n3_id FROM order_lines GROUP BY order_num, n3_id
     WITH NO DATA;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_em_order_n3 ON em_order_n3 (order_num, n3_id);
+CREATE INDEX IF NOT EXISTS ix_em_order_n3_n3 ON em_order_n3 (n3_id);
 
--- 3) Нишевая популярность на уровне N3 (all-time; см. упрощение №1) --------------
+-- 3) Размер заказа (число подгрупп) — для порога пересечения ---------------------
+CREATE MATERIALIZED VIEW IF NOT EXISTS em_order_size AS
+    SELECT order_num, count(*) AS n3_count FROM em_order_n3 GROUP BY order_num
+    WITH NO DATA;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_em_order_size ON em_order_size (order_num);
+
+-- 4) Нишевая популярность на уровне N3 (all-time; см. упрощение) -----------------
 CREATE MATERIALIZED VIEW IF NOT EXISTS em_niche_n3 AS
     WITH nc AS (
         SELECT niche, n3_id, count(DISTINCT client_id) AS client_count
@@ -63,95 +57,102 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS em_niche_n3 AS
         SELECT niche, count(DISTINCT client_id) AS total_clients
         FROM order_lines WHERE niche IS NOT NULL GROUP BY niche
     )
-    SELECT nc.niche, nc.n3_id, nc.client_count, nt.total_clients,
+    SELECT nc.niche, nc.n3_id,
            round(nc.client_count::numeric / NULLIF(nt.total_clients, 0) * 100, 1) AS niche_pct
     FROM nc JOIN nt USING (niche)
     WITH NO DATA;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_em_niche_n3 ON em_niche_n3 (niche, n3_id);
 
--- 4) Когда клиент ВПЕРВЫЕ купил подгруппу — для флага «покупал раньше» -----------
-CREATE MATERIALIZED VIEW IF NOT EXISTS em_client_n3_first AS
-    SELECT client_id, n3_id, min(order_date) AS first_date
-    FROM order_lines GROUP BY client_id, n3_id
+-- 5) Рекомендации на заказ-триггер (реплей analyze_niche) ------------------------
+--    Популярные в нише n3 (>= порога), отсутствующие в самом заказе.
+CREATE MATERIALIZED VIEW IF NOT EXISTS em_recs AS
+    SELECT o.order_num  AS trig_order,
+           o.client_id,
+           o.niche,
+           o.order_date AS trig_date,
+           np.n3_id
+    FROM em_order_header o
+    JOIN em_niche_n3 np ON np.niche = o.niche AND np.niche_pct >= 5   -- min_niche_pct
+    WHERE o.order_date IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM em_order_n3 oo
+          WHERE oo.order_num = o.order_num AND oo.n3_id = np.n3_id
+      )
     WITH NO DATA;
-CREATE UNIQUE INDEX IF NOT EXISTS ux_em_client_n3_first ON em_client_n3_first (client_id, n3_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_em_recs ON em_recs (trig_order, n3_id);
+CREATE INDEX IF NOT EXISTS ix_em_recs_slice ON em_recs (niche, trig_date);
 
--- 5) Бэктест: (заказ-триггер × рекомендованная n3) + факт «сыграла ли» ----------
---    Реплей analyze_niche: нишевые n3 с niche_pct >= 5, отсутствующие в триггере.
---    hit_* != NULL, если рекомендованная n3 появилась в новом заказе клиента в окне.
-CREATE MATERIALIZED VIEW IF NOT EXISTS effect_backtest_s2 AS
-    WITH recs AS (
-        SELECT o.order_num  AS trig_order,
-               o.client_id,
-               o.niche,
-               o.order_date AS trig_date,
-               np.n3_id,
-               np.niche_pct,
-               EXISTS (
-                   SELECT 1 FROM em_client_n3_first b
-                   WHERE b.client_id = o.client_id
-                     AND b.n3_id     = np.n3_id
-                     AND b.first_date < o.order_date
-               ) AS client_bought_before
-        FROM em_order_header o
-        JOIN em_niche_n3 np
-          ON np.niche = o.niche
-         AND np.niche_pct >= 5                       -- MIN_NICHE_PCT
-        WHERE o.order_date IS NOT NULL
-          AND NOT EXISTS (                            -- n3 отсутствует в самом заказе
-              SELECT 1 FROM em_order_n3 oo
-              WHERE oo.order_num = o.order_num AND oo.n3_id = np.n3_id
-          )
+-- 6) Строгий матч + дифф: AI-добавленные позиции в «переделке» -------------------
+CREATE MATERIALIZED VIEW IF NOT EXISTS em_effect_s2 AS
+    WITH cand AS (                                   -- кандидаты «закрытый ↔ новый»
+        SELECT o1.order_num  AS trig,
+               o2.order_num  AS newo,
+               o1.niche,
+               o1.order_date AS trig_date,
+               o2.order_date AS new_date,
+               count(*)      AS overlap              -- общих подгрупп
+        FROM em_order_header o1
+        JOIN em_order_header o2
+          ON o2.client_id  = o1.client_id
+         AND o2.order_num <> o1.order_num
+         AND o1.order_date IS NOT NULL
+         AND o2.order_date IS NOT NULL
+         AND o2.order_date >  o1.order_date + 2       -- после закрытия (lifetime_days)
+         AND o2.order_date <= o1.order_date + 2 + 5   -- + match_window
+        JOIN em_order_n3 n1 ON n1.order_num = o1.order_num
+        JOIN em_order_n3 n2 ON n2.order_num = o2.order_num AND n2.n3_id = n1.n3_id
+        GROUP BY o1.order_num, o2.order_num, o1.niche, o1.order_date, o2.order_date
+    ),
+    best AS (                                        -- лучший матч на триггер
+        SELECT DISTINCT ON (c.trig)
+               c.trig, c.newo, c.niche, c.trig_date
+        FROM cand c
+        JOIN em_order_size s ON s.order_num = c.trig
+        WHERE c.overlap >= GREATEST(1, ceil(0.5 * s.n3_count))   -- min_overlap_frac
+        ORDER BY c.trig, c.overlap DESC, c.new_date ASC, c.newo
     )
-    SELECT r.trig_order, r.client_id, r.niche, r.trig_date,
-           r.n3_id, r.niche_pct, r.client_bought_before,
-           h.hit_order, h.hit_date, h.realized_qty
-    FROM recs r
-    LEFT JOIN LATERAL (                               -- первый новый заказ в окне с этой n3
-        SELECT ol.order_num AS hit_order,
-               oh.order_date AS hit_date,
-               round(sum(ol.qty), 3) AS realized_qty
-        FROM order_lines ol
-        JOIN em_order_header oh ON oh.order_num = ol.order_num
-        WHERE ol.client_id  = r.client_id
-          AND ol.n3_id      = r.n3_id
-          AND ol.order_num <> r.trig_order
-          AND oh.order_date >  r.trig_date
-          AND oh.order_date <= r.trig_date + 4        -- lifetime_days (≈2 раб. дня)
-        GROUP BY ol.order_num, oh.order_date
-        ORDER BY oh.order_date ASC
-        LIMIT 1
-    ) h ON true
+    SELECT b.trig AS trig_order, b.newo, b.niche, b.trig_date,
+           n2.n3_id,
+           ( SELECT round(sum(ol.qty), 3) FROM order_lines ol
+             WHERE ol.order_num = b.newo AND ol.n3_id = n2.n3_id ) AS added_qty
+    FROM best b
+    JOIN em_order_n3 n2 ON n2.order_num = b.newo
+    JOIN em_recs r ON r.trig_order = b.trig AND r.n3_id = n2.n3_id      -- позиция рекомендована
+    WHERE NOT EXISTS (                                                  -- и её не было в закрытом
+        SELECT 1 FROM em_order_n3 n1
+        WHERE n1.order_num = b.trig AND n1.n3_id = n2.n3_id
+    )
     WITH NO DATA;
-CREATE UNIQUE INDEX IF NOT EXISTS ux_effect_backtest_s2 ON effect_backtest_s2 (trig_order, n3_id);
-CREATE INDEX IF NOT EXISTS ix_effect_backtest_s2_slice ON effect_backtest_s2 (niche, trig_date);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_em_effect_s2 ON em_effect_s2 (trig_order, n3_id);
+CREATE INDEX IF NOT EXISTS ix_em_effect_s2_slice ON em_effect_s2 (niche, trig_date);
 
--- 6) Витрина для PowerBI: агрегаты по нише × месяцу ----------------------------
---    Обычный VIEW поверх матвью (5) — пересчёта не требует.
---    analyzed_orders  = заказы, где ассистент «сработал» (была ≥1 рекомендация).
---    converted_orders = из них — где рекомендация «сыграла» (сценарий №2).
+-- 7) Витрина для PowerBI: ниша × месяц ------------------------------------------
+--    analyzed  = закрытые заказы, где ассистент дал ≥1 рекомендацию;
+--    converted = из них — где нашлась «переделка» с AI-добавленной позицией.
 CREATE OR REPLACE VIEW effect_metrics AS
-    SELECT
-        'Сценарий №2'                                   AS scenario,
-        niche,
-        date_trunc('month', trig_date)::date            AS period_month,
-        count(DISTINCT trig_order)                      AS analyzed_orders,
-        count(DISTINCT trig_order)
-            FILTER (WHERE hit_order IS NOT NULL)        AS converted_orders,
-        round(
-            count(DISTINCT trig_order) FILTER (WHERE hit_order IS NOT NULL)::numeric
-            / NULLIF(count(DISTINCT trig_order), 0) * 100, 1
-        )                                               AS conversion_pct,
-        round(sum(realized_qty)
-            FILTER (WHERE hit_order IS NOT NULL), 3)    AS realized_tonnage,
-        count(*)                                        AS recommendations,
-        count(*) FILTER (WHERE hit_order IS NOT NULL)   AS recommendations_hit
-    FROM effect_backtest_s2
-    GROUP BY niche, date_trunc('month', trig_date);
+    WITH analyzed AS (
+        SELECT niche, date_trunc('month', trig_date)::date AS period_month,
+               count(DISTINCT trig_order) AS analyzed_orders
+        FROM em_recs GROUP BY 1, 2
+    ),
+    converted AS (
+        SELECT niche, date_trunc('month', trig_date)::date AS period_month,
+               count(DISTINCT trig_order) AS converted_orders,
+               round(sum(added_qty), 3)   AS realized_tonnage
+        FROM em_effect_s2 GROUP BY 1, 2
+    )
+    SELECT 'Сценарий №2'::text            AS scenario,
+           a.niche,
+           a.period_month,
+           a.analyzed_orders,
+           COALESCE(c.converted_orders, 0) AS converted_orders,
+           round(COALESCE(c.converted_orders, 0)::numeric
+                 / NULLIF(a.analyzed_orders, 0) * 100, 1) AS conversion_pct,
+           COALESCE(c.realized_tonnage, 0) AS realized_tonnage
+    FROM analyzed a
+    LEFT JOIN converted c
+      ON c.niche = a.niche AND c.period_month = a.period_month;
 
--- Денежный эффект (§6): realized_tonnage * удельная EBITDA (₽/тн).
--- TODO: JOIN к справочнику EBITDA, когда согласуют источник/гранулярность (§9 п.6).
-
+-- Денежный эффект (§6): realized_tonnage * удельная EBITDA (₽/тн) — TODO справочник.
 -- Порядок REFRESH (для MATERIALIZED_VIEWS): em_order_header, em_order_n3,
--- em_niche_n3, em_client_n3_first, effect_backtest_s2. effect_metrics — обычный
--- VIEW, не рефрешится.
+-- em_order_size, em_niche_n3, em_recs, em_effect_s2. effect_metrics — обычный VIEW.
