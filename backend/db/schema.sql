@@ -12,8 +12,17 @@ CREATE TABLE IF NOT EXISTS order_lines (
     niche       text,
     n3_id       text NOT NULL,
     n4_id       text NOT NULL,
-    qty         numeric NOT NULL
+    qty         numeric NOT NULL,
+    -- Маркер рекомендации (заполняет 1С при принятии рекомендации ИИ):
+    --   rec_source       — позиция добавлена из принятой рекомендации;
+    --   rec_kind         — тип: 'forgotten' | 'niche';
+    --   rec_origin_order — order_num, в котором позиция была рекомендована
+    --                      (= order_num → сценарий №1; иначе → сценарий №2).
+    rec_source       boolean NOT NULL DEFAULT false,
+    rec_kind         text,
+    rec_origin_order text
 );
+CREATE INDEX IF NOT EXISTS ix_order_lines_rec_source ON order_lines (rec_source) WHERE rec_source;
 CREATE INDEX IF NOT EXISTS ix_order_lines_order_num ON order_lines (order_num);
 CREATE INDEX IF NOT EXISTS ix_order_lines_client_id ON order_lines (client_id);
 CREATE INDEX IF NOT EXISTS ix_order_lines_niche     ON order_lines (niche);
@@ -33,7 +42,10 @@ CREATE TABLE IF NOT EXISTS order_line_versions (
     niche       text,
     n3_id       text NOT NULL,
     n4_id       text NOT NULL,
-    qty         numeric NOT NULL
+    qty         numeric NOT NULL,
+    rec_source       boolean NOT NULL DEFAULT false,
+    rec_kind         text,
+    rec_origin_order text
 );
 CREATE INDEX IF NOT EXISTS ix_olv_order ON order_line_versions (order_num, ingested_at);
 

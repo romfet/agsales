@@ -9,6 +9,7 @@ Order key = order_num; niche = Отрасль.
 """
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Column,
     Date,
     DateTime,
@@ -33,6 +34,10 @@ order_lines = Table(
     Column("n3_id", Text, nullable=False),
     Column("n4_id", Text, nullable=False),
     Column("qty", Numeric, nullable=False),
+    # Маркер рекомендации (проставляет 1С; см. schema.sql).
+    Column("rec_source", Boolean),
+    Column("rec_kind", Text),
+    Column("rec_origin_order", Text),
 )
 
 # Append-only снимки версий заказа (см. schema.sql). id/ingested_at заполняются
@@ -50,6 +55,9 @@ order_line_versions = Table(
     Column("n3_id", Text, nullable=False),
     Column("n4_id", Text, nullable=False),
     Column("qty", Numeric, nullable=False),
+    Column("rec_source", Boolean),
+    Column("rec_kind", Text),
+    Column("rec_origin_order", Text),
 )
 
 client_dim = Table(

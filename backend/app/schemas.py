@@ -34,6 +34,10 @@ class IngestOrderLine(BaseModel):
     n4_id: str
     qty: float
     deleted: bool = False
+    # Маркер рекомендации (заполняет 1С при принятии рекомендации ИИ):
+    rec_source: bool = False            # позиция добавлена из рекомендации
+    rec_kind: str | None = None         # 'forgotten' | 'niche'
+    rec_origin_order: str | None = None  # order_num, где позиция была рекомендована
 
 
 class IngestOrderLinesIn(BaseModel):
