@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
+import re
 
 from sqlalchemy import text
 
@@ -19,12 +20,11 @@ _SCHEMA = pathlib.Path(__file__).with_name("schema.sql").read_text(encoding="utf
 
 
 def _statements(sql: str) -> list[str]:
-    out = []
-    for chunk in sql.split(";"):
-        body = "\n".join(l for l in chunk.splitlines() if not l.strip().startswith("--")).strip()
-        if body:
-            out.append(chunk.strip())
-    return out
+    # Strip ``--`` comments to end-of-line FIRST, then split on ``;`` — so a
+    # semicolon inside a comment can't break statement splitting. (schema.sql has
+    # no string literals containing ``--``.)
+    no_comments = "\n".join(re.sub(r"--.*$", "", line) for line in sql.splitlines())
+    return [s.strip() for s in no_comments.split(";") if s.strip()]
 
 
 async def apply_schema() -> None:

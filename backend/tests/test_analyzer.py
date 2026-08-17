@@ -56,8 +56,15 @@ def test_niche_recommends_absent_popular_product():
 
 
 def test_niche_marks_client_bought_before():
-    recs = analyzer.analyze_niche("Строительство", [_np("n3-tr", "n4-9", niche_pct=12, freq=20)], {"n4-9"}, order_lines=[])
+    # client_bought_before теперь по подгруппе (N3), не по SKU.
+    recs = analyzer.analyze_niche("Строительство", [_np("n3-tr", "n4-9", niche_pct=12, freq=20)], {"n3-tr"}, order_lines=[])
     assert recs[0]["client_bought_before"] is True
+
+
+def test_niche_bought_before_ignores_n4_level_set():
+    # набор SKU (n4) не должен влиять на флаг — сверяемся с подгруппой (n3).
+    recs = analyzer.analyze_niche("Строительство", [_np("n3-tr", "n4-9", niche_pct=12, freq=20)], {"n4-9"}, order_lines=[])
+    assert recs[0]["client_bought_before"] is False
 
 
 def test_niche_skips_products_in_current_order():

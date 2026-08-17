@@ -29,12 +29,15 @@ def _order_index(order_lines: list[dict]) -> tuple[set[str], dict[str, float]]:
     return order_n3, order_qty
 
 
-def analyze_forgotten(profile_n4: list[dict], order_lines: list[dict]) -> list[dict]:
-    """Analysis 1: products this client usually buys but is missing/under-ordering now."""
+def analyze_forgotten(profile_n3: list[dict], order_lines: list[dict]) -> list[dict]:
+    """Analysis 1: subgroups this client usually buys but is missing/under-ordering now.
+
+    Input rows are N3-grain (one per subgroup); ``n4_id`` is a representative product.
+    """
     order_n3, order_qty = _order_index(order_lines)
     results: list[dict] = []
 
-    for row in profile_n4:
+    for row in profile_n3:
         n3 = row["n3_id"]
         freq_pct = row["frequency_pct"] or 0
         avg_qty = row["avg_qty_per_order"] or 0
@@ -71,15 +74,18 @@ def analyze_forgotten(profile_n4: list[dict], order_lines: list[dict]) -> list[d
 
 def analyze_niche(
     niche: str,
-    niche_profile_n4: list[dict],
-    client_bought_n4_ids: set[str],
+    niche_profile_n3: list[dict],
+    client_bought_n3_ids: set[str],
     order_lines: list[dict],
 ) -> list[dict]:
-    """Analysis 2: products popular among same-niche clients, absent from this order."""
+    """Analysis 2: subgroups popular among same-niche clients, absent from this order.
+
+    Input rows are N3-grain (one per subgroup); ``n4_id`` is a representative product.
+    """
     order_n3, _ = _order_index(order_lines)
     results: list[dict] = []
 
-    for row in niche_profile_n4:
+    for row in niche_profile_n3:
         n3 = row["n3_id"]
         niche_pct = row["niche_pct"] or 0
 
@@ -93,7 +99,7 @@ def analyze_niche(
                 "order_count": row["order_count"],
                 "total_orders": row["total_orders_in_niche"],
                 "frequency_pct": row["niche_freq_pct"] or 0,
-                "client_bought_before": row["n4_id"] in client_bought_n4_ids,
+                "client_bought_before": row["n3_id"] in client_bought_n3_ids,
                 "avg_qty_per_client": round(row["avg_qty_per_client"] or 0, 2),
                 "priority": "high" if niche_pct >= HIGH_NICHE_PCT else "medium",
             })

@@ -24,13 +24,14 @@ async def analyze(client_id: str, lines: list[dict]) -> dict:
 
     niche = await repo.get_client_niche(client_id)
 
-    client_profile = await repo.get_client_profile_n4(client_id)
+    # Профили на уровне N3 (одна строка на подгруппу) — анализ идёт по N3.
+    client_profile = await repo.get_client_profile_n3(client_id)
     forgotten = analyzer.analyze_forgotten(client_profile, order_lines)
 
     niche_recs: list[dict] = []
     if niche:
-        niche_profile = await repo.get_niche_profile_n4(niche)
-        bought = await repo.get_client_bought_n4_ids(client_id)
+        niche_profile = await repo.get_niche_profile_n3(niche)
+        bought = await repo.get_client_bought_n3_ids(client_id)
         niche_recs = analyzer.analyze_niche(niche, niche_profile, bought, order_lines)
 
     return {

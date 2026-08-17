@@ -47,3 +47,23 @@ async def test_analyze_end_to_end():
     result = await services.analyze(KNOWN_CLIENT, lines=[])
     assert "analysis1_forgotten" in result
     assert "analysis2_niche" in result
+
+
+async def test_client_profile_n3_is_one_row_per_subgroup():
+    """Regression: two SKUs of one subgroup across two orders must yield ONE N3
+    row with order_count = distinct orders (not one row per SKU / per line)."""
+    def line(order, n4):
+        return {"order_num": order, "order_date": "2026-05-01",
+                "client_id": "cli-n3-test", "client_name": "X", "niche": "НишаX",
+                "n3_id": "n3-X", "n4_id": n4, "qty": 2}
+
+    # order R-1: two SKUs of n3-X; order R-2: one SKU → subgroup in 2 distinct orders
+    await repo.ingest_order_lines([line("R-1", "n4-1"), line("R-1", "n4-2"), line("R-2", "n4-1")])
+    await repo.refresh_aggregates()
+
+    rows = [r for r in await repo.get_client_profile_n3("cli-n3-test") if r["n3_id"] == "n3-X"]
+    assert len(rows) == 1                    # one row per subgroup, not per SKU
+    assert rows[0]["order_count"] == 2       # distinct orders, not 3 lines / 2 SKUs
+    assert rows[0]["total_orders"] == 2
+    assert rows[0]["frequency_pct"] == 100.0
+    assert rows[0]["n4_id"] in {"n4-1", "n4-2"}   # representative SKU carried through
