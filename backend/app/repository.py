@@ -11,7 +11,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import delete, distinct, insert, select, text
+from sqlalchemy import delete, insert, select, text
 
 from backend.app.db import tables as t
 from backend.app.db.session import engine
@@ -23,31 +23,6 @@ def _f(v: Any) -> float | None:
     if isinstance(v, Decimal):
         return float(v)
     return v
-
-
-def _row_to_client_profile(r) -> dict:
-    return {
-        "n3_id": r.n3_id,
-        "n4_id": r.n4_id,
-        "order_count": int(r.order_count),
-        "total_orders": int(r.total_orders),
-        "frequency_pct": _f(r.frequency_pct),
-        "avg_qty_per_order": _f(r.avg_qty_per_order),
-    }
-
-
-def _row_to_niche_profile(r) -> dict:
-    return {
-        "n3_id": r.n3_id,
-        "n4_id": r.n4_id,
-        "client_count": int(r.client_count),
-        "total_clients_in_niche": int(r.total_clients_in_niche),
-        "order_count": int(r.order_count),
-        "total_orders_in_niche": int(r.total_orders_in_niche),
-        "niche_pct": _f(r.niche_pct),
-        "niche_freq_pct": _f(r.niche_freq_pct),
-        "avg_qty_per_client": _f(r.avg_qty_per_client),
-    }
 
 
 def _row_to_client_profile_n3(r) -> dict:
@@ -220,28 +195,6 @@ async def get_n3_for_n4(n4_ids: list[str]) -> dict[str, str]:
     async with engine.connect() as conn:
         rows = (await conn.execute(q)).all()
     return {r.n4_id: r.n3_id for r in rows}
-
-
-async def get_client_profile_n4(client_id: str) -> list[dict]:
-    q = select(t.client_profile_n4).where(t.client_profile_n4.c.client_id == client_id)
-    async with engine.connect() as conn:
-        rows = (await conn.execute(q)).all()
-    return [_row_to_client_profile(r) for r in rows]
-
-
-async def get_niche_profile_n4(niche: str) -> list[dict]:
-    q = select(t.niche_profile_n4).where(t.niche_profile_n4.c.niche == niche)
-    async with engine.connect() as conn:
-        rows = (await conn.execute(q)).all()
-    return [_row_to_niche_profile(r) for r in rows]
-
-
-async def get_client_bought_n4_ids(client_id: str) -> set[str]:
-    q = select(distinct(t.client_profile_n4.c.n4_id)).where(
-        t.client_profile_n4.c.client_id == client_id
-    )
-    async with engine.connect() as conn:
-        return {r[0] for r in (await conn.execute(q)).all()}
 
 
 # --- Analyze reads at N3 grain (subgroup) — source of recommendations -----

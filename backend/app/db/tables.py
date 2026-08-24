@@ -104,35 +104,6 @@ products = Table(
     Column("n3_id", Text),
 )
 
-client_profile_n4 = Table(
-    "client_profile_n4",
-    metadata,
-    Column("client_id", Text),
-    Column("n3_id", Text),
-    Column("n4_id", Text),
-    Column("order_count", Integer),
-    Column("total_qty", Numeric),
-    Column("total_orders", Integer),
-    Column("frequency_pct", Numeric),
-    Column("avg_qty_per_order", Numeric),
-)
-
-niche_profile_n4 = Table(
-    "niche_profile_n4",
-    metadata,
-    Column("niche", Text),
-    Column("n3_id", Text),
-    Column("n4_id", Text),
-    Column("client_count", Integer),
-    Column("order_count", Integer),
-    Column("total_qty", Numeric),
-    Column("total_clients_in_niche", Integer),
-    Column("total_orders_in_niche", Integer),
-    Column("niche_pct", Numeric),
-    Column("niche_freq_pct", Numeric),
-    Column("avg_qty_per_client", Numeric),
-)
-
 client_profile_n3 = Table(
     "client_profile_n3",
     metadata,
@@ -167,8 +138,6 @@ MATERIALIZED_VIEWS = [
     "client_dim",
     "niche_dim",
     "products",
-    "client_profile_n4",
-    "niche_profile_n4",
     "client_profile_n3",
     "niche_profile_n3",
 ]

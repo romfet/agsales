@@ -12,12 +12,14 @@ import asyncio
 
 from backend.app import repository as repo
 from backend.app.db.session import engine
-from backend.sync.mock_source import generate_rows
+from backend.sync.mock_source import generate_rows, orders_to_shipments
 
 
 async def seed() -> int:
     rows = generate_rows()
     await repo.ingest_order_lines(rows)
+    # Отгрузки — источник профилей рекомендаций (одна отгрузка на заказ, мок).
+    await repo.ingest_shipment_lines(orders_to_shipments(rows))
     await repo.refresh_aggregates()
     return len(rows)
 

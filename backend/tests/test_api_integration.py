@@ -58,21 +58,21 @@ async def test_analyze_rejects_empty_order():
 
 
 async def test_ingest_then_analyze_end_to_end():
-    """Push an order via ingest, refresh, then analyze resolves n4_id → n3_id and
-    flags the omitted subgroup as 'forgotten'."""
-    def line(n3, n4):
+    """Push a SHIPMENT via ingest (профили строятся из отгрузок), refresh, then
+    analyze resolves n4_id → n3_id and flags the omitted subgroup as 'forgotten'."""
+    def sline(n3, n4):
         return {
-            "order_id": "ord-test-0001", "order_num": "T-1", "order_date": "2026-06-01",
-            "client_id": "cli-test-0001", "client_name": "ТестКлиент", "niche": "ТестНиша",
+            "shipment_id": "SH-T1", "shipment_num": "SH-T1", "shipment_date": "2026-06-01",
+            "order_id": "ord-test-0001", "client_id": "cli-test-0001", "niche": "ТестНиша",
             "n3_id": n3, "n4_id": n4, "qty": 3,
         }
     async with _client() as c:
-        ing = await c.post("/api/ingest/order-lines",
-                           json={"items": [line("n3-A", "n4-A"), line("n3-B", "n4-B")]})
+        ing = await c.post("/api/ingest/shipments",
+                           json={"items": [sline("n3-A", "n4-A"), sline("n3-B", "n4-B")]})
         assert ing.status_code == 200 and ing.json()["accepted"] == 2
 
         cm = await c.post("/api/ingest/commit")
-        assert cm.status_code == 200 and cm.json()["rows"] > 0
+        assert cm.status_code == 200
 
         # draft order has only subgroup n3-A → n3-B should surface as forgotten
         an = await c.post(

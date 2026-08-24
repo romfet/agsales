@@ -69,3 +69,30 @@ def generate_rows(
                     "qty": round(rng.uniform(0.5, 20.0), 3),
                 })
     return rows
+
+
+def orders_to_shipments(order_rows: list[dict]) -> list[dict]:
+    """Мок: каждый заказ отгружен целиком → одна отгрузка на заказ (все строки
+    заказа делят один shipment_id). Нужно, чтобы профили рекомендаций (они строятся
+    из отгрузок) были непусты. qty = как в заказе (полная отгрузка)."""
+    ship_by_order: dict[str, str] = {}
+    ships: list[dict] = []
+    seq = 0
+    for r in order_rows:
+        oid = r["order_id"]
+        if oid not in ship_by_order:
+            seq += 1
+            ship_by_order[oid] = _guid("ship", seq)
+        ships.append({
+            "shipment_id": ship_by_order[oid],
+            "shipment_num": "РТ-" + r["order_num"],
+            "shipment_date": r["order_date"],
+            "order_id": oid,
+            "client_id": r["client_id"],
+            "client_name": r["client_name"],
+            "niche": r["niche"],
+            "n3_id": r["n3_id"],
+            "n4_id": r["n4_id"],
+            "qty": r["qty"],
+        })
+    return ships

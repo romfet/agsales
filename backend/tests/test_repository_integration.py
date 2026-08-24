@@ -34,14 +34,14 @@ async def _seeded():
 
 async def test_client_niche_and_profile():
     assert await repo.get_client_niche(KNOWN_CLIENT)
-    profile = await repo.get_client_profile_n4(KNOWN_CLIENT)
+    profile = await repo.get_client_profile_n3(KNOWN_CLIENT)
     assert profile
     assert all(0 <= r["frequency_pct"] <= 100 for r in profile)
 
 
 async def test_n4_to_n3_resolution_from_catalog():
-    profile = await repo.get_client_profile_n4(KNOWN_CLIENT)
-    n4_id = profile[0]["n4_id"]
+    profile = await repo.get_client_profile_n3(KNOWN_CLIENT)
+    n4_id = profile[0]["n4_id"]                   # представительный товар подгруппы
     resolved = await repo.get_n3_for_n4([n4_id])
     assert resolved.get(n4_id) == profile[0]["n3_id"]
 
@@ -53,23 +53,24 @@ async def test_analyze_end_to_end():
 
 
 async def test_client_profile_n3_is_one_row_per_subgroup():
-    """Regression: two SKUs of one subgroup across two orders must yield ONE N3
-    row with order_count = distinct orders (not one row per SKU / per line)."""
-    def line(order, n4):
-        return {"order_id": order, "order_num": order, "order_date": "2026-05-01",
-                "client_id": "cli-n3-test", "client_name": "X", "niche": "НишаX",
+    """Regression: два SKU одной подгруппы в двух отгрузках → ОДНА N3-строка,
+    order_count = число РАЗНЫХ отгрузок (не по SKU / не по строкам). Профили теперь
+    строятся из shipment_lines, единица события — shipment_id."""
+    def sline(shipment, n4):
+        return {"shipment_id": shipment, "shipment_num": shipment, "shipment_date": "2026-05-01",
+                "order_id": "ord-" + shipment, "client_id": "cli-n3-test", "niche": "НишаX",
                 "n3_id": "n3-X", "n4_id": n4, "qty": 2}
 
-    # order R-1: two SKUs of n3-X; order R-2: one SKU → subgroup in 2 distinct orders
-    await repo.ingest_order_lines([line("R-1", "n4-1"), line("R-1", "n4-2"), line("R-2", "n4-1")])
+    # S-1: два SKU n3-X; S-2: один SKU → подгруппа в 2 разных отгрузках
+    await repo.ingest_shipment_lines([sline("S-1", "n4-1"), sline("S-1", "n4-2"), sline("S-2", "n4-1")])
     await repo.refresh_aggregates()
 
     rows = [r for r in await repo.get_client_profile_n3("cli-n3-test") if r["n3_id"] == "n3-X"]
-    assert len(rows) == 1                    # one row per subgroup, not per SKU
-    assert rows[0]["order_count"] == 2       # distinct orders, not 3 lines / 2 SKUs
+    assert len(rows) == 1                    # одна строка на подгруппу, не по SKU
+    assert rows[0]["order_count"] == 2       # разные отгрузки, не 3 строки / 2 SKU
     assert rows[0]["total_orders"] == 2
     assert rows[0]["frequency_pct"] == 100.0
-    assert rows[0]["n4_id"] in {"n4-1", "n4-2"}   # representative SKU carried through
+    assert rows[0]["n4_id"] in {"n4-1", "n4-2"}   # представительный SKU
 
 
 async def test_recommendation_marker_ingest_and_effect_view():
