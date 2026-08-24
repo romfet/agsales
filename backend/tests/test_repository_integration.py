@@ -137,3 +137,29 @@ async def test_order_versioning_and_diff():
     assert diff["n3-c"]["qty_first"] == 0.0 and diff["n3-c"]["qty_last"] == 7.0
     assert diff["n3-a"]["status"] == "unchanged"
     assert diff["n3-b"]["status"] == "unchanged"
+
+
+async def test_ingest_shipments_upsert_and_m2m():
+    """Отгрузки: upsert по shipment_id; заказ↔отгрузка many-to-many."""
+    def sline(sid, order_id, n3, n4, qty):
+        return {"shipment_id": sid, "shipment_num": "SH-" + sid, "shipment_date": "2026-08-10",
+                "order_id": order_id, "client_id": "cli-sh", "niche": "НишаS",
+                "n3_id": n3, "n4_id": n4, "qty": qty}
+
+    # одна отгрузка S1 покрывает ДВА заказа (m2m: shipment → many orders)
+    await repo.ingest_shipment_lines([sline("S1", "ORD-A", "n3-a", "n4-a", 5),
+                                      sline("S1", "ORD-B", "n3-b", "n4-b", 3)])
+    # заказ ORD-A встречается и во ВТОРОЙ отгрузке (m2m: order → many shipments)
+    await repo.ingest_shipment_lines([sline("S2", "ORD-A", "n3-a", "n4-a", 2)])
+    # upsert: перезалив S1 с изменённым qty у ORD-A (было 5 → стало 9)
+    await repo.ingest_shipment_lines([sline("S1", "ORD-A", "n3-a", "n4-a", 9),
+                                      sline("S1", "ORD-B", "n3-b", "n4-b", 3)])
+
+    async with engine.begin() as conn:
+        rows = (await conn.execute(text(
+            "SELECT shipment_id, order_id, qty FROM shipment_lines WHERE client_id='cli-sh'"))).all()
+    got = {(r.shipment_id, r.order_id): float(r.qty) for r in rows}
+    assert got[("S1", "ORD-A")] == 9.0     # S1 перезаписалась (upsert по shipment_id)
+    assert got[("S1", "ORD-B")] == 3.0
+    assert got[("S2", "ORD-A")] == 2.0     # тот же заказ в другой отгрузке
+    assert len(rows) == 3

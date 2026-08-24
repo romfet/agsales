@@ -157,6 +157,51 @@ async def ingest_order_lines(items: list[dict]) -> dict:
     return {"accepted": len(rows), "orders_affected": len(affected)}
 
 
+# --- Ingest (отгрузки: факт отгруженного) --------------------------------
+
+_SHIPMENT_FIELDS = ("shipment_id", "shipment_num", "shipment_date", "order_id",
+                    "client_id", "client_name", "niche", "n3_id", "n4_id", "qty")
+
+
+def _shipment_row(it: dict) -> dict:
+    row = {k: it.get(k) for k in _SHIPMENT_FIELDS}
+    sd = row.get("shipment_date")
+    if isinstance(sd, str) and sd:
+        row["shipment_date"] = date.fromisoformat(sd)
+    elif isinstance(sd, date):
+        row["shipment_date"] = sd
+    else:
+        row["shipment_date"] = None
+    return row
+
+
+async def ingest_shipment_lines(items: list[dict]) -> dict:
+    """Upsert строк отгрузки. Ключ — shipment_id (GUID из 1С): каждый shipment_id
+    в пачке заменяется целиком (delete-insert), ``deleted`` удаляет. Отгрузка —
+    факт, версий не держим. Заказ↔отгрузка — m2m через order_id на строке."""
+    by_ship: dict[str, list[dict]] = {}
+    deleted: set[str] = set()
+    for it in items:
+        sid = it["shipment_id"]
+        if it.get("deleted"):
+            deleted.add(sid)
+            by_ship.pop(sid, None)
+            continue
+        by_ship.setdefault(sid, []).append(it)
+
+    affected = set(by_ship) | deleted
+    rows = [_shipment_row(it) for lines in by_ship.values() for it in lines]
+
+    async with engine.begin() as conn:
+        if affected:
+            await conn.execute(
+                delete(t.shipment_lines).where(t.shipment_lines.c.shipment_id.in_(affected))
+            )
+        if rows:
+            await conn.execute(insert(t.shipment_lines), rows)
+    return {"accepted": len(rows), "shipments_affected": len(affected)}
+
+
 # --- Analyze reads --------------------------------------------------------
 
 async def get_client_niche(client_id: str) -> str | None:

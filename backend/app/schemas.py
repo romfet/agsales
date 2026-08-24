@@ -50,6 +50,32 @@ class IngestResult(BaseModel):
     orders_affected: int | None = None
 
 
+# --- Ingest отгрузок (1С → us): факт отгруженного, ключ shipment_id ---
+class IngestShipmentLine(BaseModel):
+    """Строка отгрузки: как заказ + shipment_id (ключ) + order_id (линк, m2m)."""
+
+    shipment_id: str                    # GUID отгрузки из 1С — ключ
+    shipment_num: str | None = None     # номер документа отгрузки
+    shipment_date: str | None = None    # ISO YYYY-MM-DD
+    order_id: str                       # GUID заказа (линк)
+    client_id: str
+    client_name: str | None = None
+    niche: str | None = None
+    n3_id: str
+    n4_id: str
+    qty: float                          # фактически отгружено
+    deleted: bool = False
+
+
+class IngestShipmentLinesIn(BaseModel):
+    items: list[IngestShipmentLine] = Field(default_factory=list)
+
+
+class IngestShipmentResult(BaseModel):
+    accepted: int
+    shipments_affected: int | None = None
+
+
 # --- Analyze (operator → us; endpoint 2) ---
 class OrderLineIn(BaseModel):
     """A line of the current (draft) order. Analyzer works at N3 level: send

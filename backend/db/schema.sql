@@ -55,6 +55,28 @@ CREATE TABLE IF NOT EXISTS order_line_versions (
 );
 CREATE INDEX IF NOT EXISTS ix_olv_order ON order_line_versions (order_id, version_seq);
 
+-- Отгрузки (факт отгруженного товара). Контракт как у заказа + GUID заказа для
+-- линка (заказ↔отгрузка — many-to-many). Ключ — shipment_id (GUID из 1С). Upsert
+-- по shipment_id (перезалив заменяет строки отгрузки), удалений нет. qty =
+-- фактически отгружено. Источник для рекомендаций (Фаза 3) и «отгружено» в воронке.
+CREATE TABLE IF NOT EXISTS shipment_lines (
+    id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    shipment_id   text NOT NULL,       -- GUID отгрузки из 1С — ключ
+    shipment_num  text,                -- номер документа отгрузки (отображение)
+    shipment_date date,
+    order_id      text NOT NULL,       -- GUID заказа (линк, m2m)
+    client_id     text NOT NULL,
+    client_name   text,
+    niche         text,
+    n3_id         text NOT NULL,
+    n4_id         text NOT NULL,
+    qty           numeric NOT NULL      -- фактически отгружено
+);
+CREATE INDEX IF NOT EXISTS ix_shipment_lines_shipment ON shipment_lines (shipment_id);
+CREATE INDEX IF NOT EXISTS ix_shipment_lines_order    ON shipment_lines (order_id);
+CREATE INDEX IF NOT EXISTS ix_shipment_lines_client   ON shipment_lines (client_id);
+CREATE INDEX IF NOT EXISTS ix_shipment_lines_niche    ON shipment_lines (niche);
+
 CREATE MATERIALIZED VIEW IF NOT EXISTS client_dim AS
     SELECT client_id,
            max(client_name)                      AS client_name,

@@ -64,6 +64,22 @@ order_line_versions = Table(
     Column("rec_origin_order", Text),
 )
 
+shipment_lines = Table(
+    "shipment_lines",
+    metadata,
+    Column("id", BigInteger, primary_key=True),
+    Column("shipment_id", Text, nullable=False),
+    Column("shipment_num", Text),
+    Column("shipment_date", Date),
+    Column("order_id", Text, nullable=False),
+    Column("client_id", Text, nullable=False),
+    Column("client_name", Text),
+    Column("niche", Text),
+    Column("n3_id", Text, nullable=False),
+    Column("n4_id", Text, nullable=False),
+    Column("qty", Numeric, nullable=False),
+)
+
 client_dim = Table(
     "client_dim",
     metadata,

@@ -9,7 +9,12 @@ from fastapi import APIRouter, Depends
 
 from backend.app import repository as repo
 from backend.app.core.security import require_scope
-from backend.app.schemas import IngestOrderLinesIn, IngestResult
+from backend.app.schemas import (
+    IngestOrderLinesIn,
+    IngestResult,
+    IngestShipmentLinesIn,
+    IngestShipmentResult,
+)
 
 router = APIRouter(
     prefix="/api/ingest",
@@ -21,6 +26,12 @@ router = APIRouter(
 @router.post("/order-lines", response_model=IngestResult)
 async def ingest_order_lines(body: IngestOrderLinesIn):
     return await repo.ingest_order_lines([i.model_dump() for i in body.items])
+
+
+@router.post("/shipments", response_model=IngestShipmentResult)
+async def ingest_shipments(body: IngestShipmentLinesIn):
+    """Приём факта отгрузки (upsert по shipment_id)."""
+    return await repo.ingest_shipment_lines([i.model_dump() for i in body.items])
 
 
 @router.post("/commit")
