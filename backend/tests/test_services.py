@@ -22,13 +22,11 @@ async def test_analyze_is_n3_grain_and_deduped(monkeypatch):
     async def client_profile(_): return [_cp_n3("n3-A", "n4-A1", freq=80.0)]
     async def niche(_): return "Строительство"
     async def niche_profile(_): return [_np_n3("n3-Z", "n4-Z1", niche_pct=90.0)]
-    async def bought(_): return {"n3-A"}
     async def n3_for_n4(_ids): return {}
 
     monkeypatch.setattr(repo, "get_client_profile_n3", client_profile)
     monkeypatch.setattr(repo, "get_client_niche", niche)
     monkeypatch.setattr(repo, "get_niche_profile_n3", niche_profile)
-    monkeypatch.setattr(repo, "get_client_bought_n3_ids", bought)
     monkeypatch.setattr(repo, "get_n3_for_n4", n3_for_n4)
 
     res = await services.analyze("cli", lines=[])

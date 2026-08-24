@@ -31,7 +31,8 @@ async def analyze(client_id: str, lines: list[dict]) -> dict:
     niche_recs: list[dict] = []
     if niche:
         niche_profile = await repo.get_niche_profile_n3(niche)
-        bought = await repo.get_client_bought_n3_ids(client_id)
+        # Множество N3, что клиент брал, = подгруппы его профиля (без доп. запроса).
+        bought = {r["n3_id"] for r in client_profile}
         niche_recs = analyzer.analyze_niche(niche, niche_profile, bought, order_lines)
 
     return {

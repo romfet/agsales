@@ -6,6 +6,7 @@ is by GUID (client_id / n3_id / n4_id); names are display-only.
 """
 from __future__ import annotations
 
+import hashlib
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -82,6 +83,14 @@ _ORDER_FIELDS = ("order_id", "order_num", "order_date", "client_id", "client_nam
                  "rec_source", "rec_kind", "rec_origin_order")
 
 
+def _content_hash(lines: list[dict]) -> str:
+    """Хэш состава заказа (набор строк n3×n4×qty) — для дедупа неизменных версий."""
+    parts = sorted(
+        f"{l.get('n3_id')}|{l.get('n4_id')}|{float(l.get('qty') or 0):.3f}" for l in lines
+    )
+    return hashlib.md5("\n".join(parts).encode()).hexdigest()
+
+
 def _order_row(it: dict) -> dict:
     row = {k: it.get(k) for k in _ORDER_FIELDS}
     od = row.get("order_date")
@@ -113,6 +122,7 @@ async def ingest_order_lines(items: list[dict]) -> dict:
 
     affected = set(by_order) | deleted
     rows = [_order_row(it) for lines in by_order.values() for it in lines]
+    hash_by_order = {oid: _content_hash(lines) for oid, lines in by_order.items()}
 
     async with engine.begin() as conn:
         if affected:
@@ -121,9 +131,29 @@ async def ingest_order_lines(items: list[dict]) -> dict:
             )
         if rows:
             await conn.execute(insert(t.order_lines), rows)
-            # Append-only снимок присланного состояния (ingested_at = now() в БД,
-            # одинаков для всей пачки) — версия заказа для диффа.
-            await conn.execute(insert(t.order_line_versions), rows)
+        # Версии: пишем снимок только для заказов, чей СОСТАВ изменился с прошлой
+        # версии (дедуп неизменных). Дискриминатор — монотонный version_seq (один
+        # на всю пачку), не таймстемп.
+        if by_order:
+            prev = (await conn.execute(
+                select(t.order_line_versions.c.order_id, t.order_line_versions.c.content_hash)
+                .where(t.order_line_versions.c.order_id.in_(by_order))
+                .distinct(t.order_line_versions.c.order_id)
+                .order_by(
+                    t.order_line_versions.c.order_id,
+                    t.order_line_versions.c.version_seq.desc(),
+                )
+            )).all()
+            last_hash = {r.order_id: r.content_hash for r in prev}
+            changed = [oid for oid in by_order if hash_by_order[oid] != last_hash.get(oid)]
+            if changed:
+                seq = await conn.scalar(text("SELECT nextval('order_version_seq')"))
+                version_rows = [
+                    {**_order_row(it), "version_seq": seq, "content_hash": hash_by_order[oid]}
+                    for oid in changed
+                    for it in by_order[oid]
+                ]
+                await conn.execute(insert(t.order_line_versions), version_rows)
     return {"accepted": len(rows), "orders_affected": len(affected)}
 
 
@@ -185,14 +215,6 @@ async def get_niche_profile_n3(niche: str) -> list[dict]:
     return [_row_to_niche_profile_n3(r) for r in rows]
 
 
-async def get_client_bought_n3_ids(client_id: str) -> set[str]:
-    q = select(distinct(t.client_profile_n3.c.n3_id)).where(
-        t.client_profile_n3.c.client_id == client_id
-    )
-    async with engine.connect() as conn:
-        return {r[0] for r in (await conn.execute(q)).all()}
-
-
 # --- Order versions / diff (для аналитики эффекта) ------------------------
 
 async def get_order_diff(order_id: str) -> list[dict]:
@@ -200,20 +222,20 @@ async def get_order_diff(order_id: str) -> list[dict]:
     status: added / removed / increased / decreased / unchanged. Основа воронки."""
     sql = text(
         """
-        WITH stamps AS (
-            SELECT min(ingested_at) AS first_at, max(ingested_at) AS last_at
+        WITH bounds AS (
+            SELECT min(version_seq) AS first_seq, max(version_seq) AS last_seq
             FROM order_line_versions WHERE order_id = :oid
         ),
         first_v AS (
             SELECT n3_id, n4_id, sum(qty) AS qty
-            FROM order_line_versions v, stamps s
-            WHERE v.order_id = :oid AND v.ingested_at = s.first_at
+            FROM order_line_versions v, bounds b
+            WHERE v.order_id = :oid AND v.version_seq = b.first_seq
             GROUP BY n3_id, n4_id
         ),
         last_v AS (
             SELECT n3_id, n4_id, sum(qty) AS qty
-            FROM order_line_versions v, stamps s
-            WHERE v.order_id = :oid AND v.ingested_at = s.last_at
+            FROM order_line_versions v, bounds b
+            WHERE v.order_id = :oid AND v.version_seq = b.last_seq
             GROUP BY n3_id, n4_id
         )
         SELECT n3_id, n4_id,

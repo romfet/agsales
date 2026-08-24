@@ -121,14 +121,16 @@ async def test_order_versioning_and_diff():
     await repo.ingest_order_lines([line("n3-a", "n4-a", 4), line("n3-b", "n4-b", 3)])          # версия 1: A,B
     await repo.ingest_order_lines([line("n3-a", "n4-a", 4), line("n3-b", "n4-b", 3),
                                    line("n3-c", "n4-c", 7)])                                    # версия 2: +C
+    await repo.ingest_order_lines([line("n3-a", "n4-a", 4), line("n3-b", "n4-b", 3),
+                                   line("n3-c", "n4-c", 7)])                                    # тот же состав → дедуп
 
     async with engine.begin() as conn:
         cur = (await conn.execute(text(
             "SELECT count(*) FROM order_lines WHERE order_id='OV-1'"))).scalar()
         vers = (await conn.execute(text(
-            "SELECT count(DISTINCT ingested_at) FROM order_line_versions WHERE order_id='OV-1'"))).scalar()
+            "SELECT count(DISTINCT version_seq) FROM order_line_versions WHERE order_id='OV-1'"))).scalar()
     assert cur == 3                       # текущий срез — последняя версия (A,B,C), не задвоился
-    assert vers == 2                      # обе версии сохранены
+    assert vers == 2                      # дедуп: неизменная 3-я загрузка НЕ создала версию
 
     diff = {d["n3_id"]: d for d in await repo.get_order_diff("OV-1")}
     assert diff["n3-c"]["status"] == "added"

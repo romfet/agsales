@@ -29,28 +29,31 @@ CREATE INDEX IF NOT EXISTS ix_order_lines_order_num ON order_lines (order_num);
 CREATE INDEX IF NOT EXISTS ix_order_lines_client_id ON order_lines (client_id);
 CREATE INDEX IF NOT EXISTS ix_order_lines_niche     ON order_lines (niche);
 
--- Версии заказа (append-only). Каждый ingest пишет сюда состояние присланных
--- заказов, помеченное временем загрузки. Группа (order_num, ingested_at) — один
--- полный снимок заказа, последний ingested_at даёт текущее состояние. Нужен для
--- диффа «исходное-финал» (сценарий №1) при условии, что 1С шлёт промежуточные
--- версии живого заказа. order_lines остаётся «текущим» срезом.
+-- Версии заказа (append-only). Каждая ЗАГРУЗКА, изменившая заказ, пишет сюда его
+-- новый снимок с монотонным version_seq (общий на всю пачку). Дискриминатор версии
+-- — version_seq (НЕ ingested_at: таймстемпы двух загрузок могут совпасть). Снимок
+-- пишется только если content_hash отличается от предыдущего (без задвоения
+-- неизменных заказов). min/max version_seq заказа = исходная/финальная версия.
+CREATE SEQUENCE IF NOT EXISTS order_version_seq;
 CREATE TABLE IF NOT EXISTS order_line_versions (
-    id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    ingested_at timestamptz NOT NULL DEFAULT now(),
-    order_id    text NOT NULL,          -- GUID заказа из 1С
-    order_num   text NOT NULL,
-    order_date  date,
-    client_id   text NOT NULL,
-    client_name text,
-    niche       text,
-    n3_id       text NOT NULL,
-    n4_id       text NOT NULL,
-    qty         numeric NOT NULL,
+    id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    version_seq  bigint NOT NULL,        -- монотонный номер версии (на пачку загрузки)
+    ingested_at  timestamptz NOT NULL DEFAULT now(),
+    content_hash text,                   -- хэш состава заказа (для дедупа неизменных)
+    order_id     text NOT NULL,          -- GUID заказа из 1С
+    order_num    text NOT NULL,
+    order_date   date,
+    client_id    text NOT NULL,
+    client_name  text,
+    niche        text,
+    n3_id        text NOT NULL,
+    n4_id        text NOT NULL,
+    qty          numeric NOT NULL,
     rec_source       boolean NOT NULL DEFAULT false,
     rec_kind         text,
     rec_origin_order text
 );
-CREATE INDEX IF NOT EXISTS ix_olv_order ON order_line_versions (order_id, ingested_at);
+CREATE INDEX IF NOT EXISTS ix_olv_order ON order_line_versions (order_id, version_seq);
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS client_dim AS
     SELECT client_id,
