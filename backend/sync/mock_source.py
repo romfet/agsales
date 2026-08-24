@@ -58,6 +58,7 @@ def generate_rows(
             for n3_name in chosen:
                 n4_name = rng.choice(CATALOG[n3_name])
                 rows.append({
+                    "order_id": _guid("ordr", order_seq),
                     "order_num": order_num,
                     "order_date": order_date,
                     "client_id": client_id,

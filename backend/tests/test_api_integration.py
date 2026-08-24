@@ -62,7 +62,7 @@ async def test_ingest_then_analyze_end_to_end():
     flags the omitted subgroup as 'forgotten'."""
     def line(n3, n4):
         return {
-            "order_num": "T-1", "order_date": "2026-06-01",
+            "order_id": "ord-test-0001", "order_num": "T-1", "order_date": "2026-06-01",
             "client_id": "cli-test-0001", "client_name": "ТестКлиент", "niche": "ТестНиша",
             "n3_id": n3, "n4_id": n4, "qty": 3,
         }

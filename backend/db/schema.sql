@@ -5,7 +5,8 @@
 
 CREATE TABLE IF NOT EXISTS order_lines (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    order_num   text NOT NULL,
+    order_id    text NOT NULL,          -- GUID заказа из 1С — канонический ключ
+    order_num   text NOT NULL,          -- номер заказа (отображение)
     order_date  date,
     client_id   text NOT NULL,
     client_name text,
@@ -23,6 +24,7 @@ CREATE TABLE IF NOT EXISTS order_lines (
     rec_origin_order text
 );
 CREATE INDEX IF NOT EXISTS ix_order_lines_rec_source ON order_lines (rec_source) WHERE rec_source;
+CREATE INDEX IF NOT EXISTS ix_order_lines_order_id  ON order_lines (order_id);
 CREATE INDEX IF NOT EXISTS ix_order_lines_order_num ON order_lines (order_num);
 CREATE INDEX IF NOT EXISTS ix_order_lines_client_id ON order_lines (client_id);
 CREATE INDEX IF NOT EXISTS ix_order_lines_niche     ON order_lines (niche);
@@ -35,6 +37,7 @@ CREATE INDEX IF NOT EXISTS ix_order_lines_niche     ON order_lines (niche);
 CREATE TABLE IF NOT EXISTS order_line_versions (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     ingested_at timestamptz NOT NULL DEFAULT now(),
+    order_id    text NOT NULL,          -- GUID заказа из 1С
     order_num   text NOT NULL,
     order_date  date,
     client_id   text NOT NULL,
@@ -47,7 +50,7 @@ CREATE TABLE IF NOT EXISTS order_line_versions (
     rec_kind         text,
     rec_origin_order text
 );
-CREATE INDEX IF NOT EXISTS ix_olv_order ON order_line_versions (order_num, ingested_at);
+CREATE INDEX IF NOT EXISTS ix_olv_order ON order_line_versions (order_id, ingested_at);
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS client_dim AS
     SELECT client_id,

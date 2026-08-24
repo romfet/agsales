@@ -25,7 +25,8 @@ class TokenOut(BaseModel):
 class IngestOrderLine(BaseModel):
     """One order-line record (grain: order × product), pushed by 1С (delta)."""
 
-    order_num: str
+    order_id: str                  # GUID заказа из 1С — канонический ключ
+    order_num: str                 # номер заказа (отображение)
     order_date: str | None = None  # ISO YYYY-MM-DD
     client_id: str
     client_name: str | None = None

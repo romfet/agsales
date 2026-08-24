@@ -77,8 +77,8 @@ def _row_to_niche_profile_n3(r) -> dict:
 
 # --- Ingest (1С feed → raw table) ----------------------------------------
 
-_ORDER_FIELDS = ("order_num", "order_date", "client_id", "client_name", "niche",
-                 "n3_id", "n4_id", "qty",
+_ORDER_FIELDS = ("order_id", "order_num", "order_date", "client_id", "client_name",
+                 "niche", "n3_id", "n4_id", "qty",
                  "rec_source", "rec_kind", "rec_origin_order")
 
 
@@ -97,17 +97,19 @@ def _order_row(it: dict) -> dict:
 
 
 async def ingest_order_lines(items: list[dict]) -> dict:
-    """Upsert pushed order lines. Grain is the document (order_num): every
-    order_num in the batch is replaced (delete-insert); ``deleted`` removes it."""
+    """Upsert pushed order lines. Grain is the document, keyed by ``order_id``
+    (GUID из 1С): every order_id in the batch is replaced (delete-insert);
+    ``deleted`` removes it. order_lines хранит текущий срез; order_line_versions —
+    историю версий (для диффа исходное→финал)."""
     by_order: dict[str, list[dict]] = {}
     deleted: set[str] = set()
     for it in items:
-        on = it["order_num"]
+        oid = it["order_id"]
         if it.get("deleted"):
-            deleted.add(on)
-            by_order.pop(on, None)
+            deleted.add(oid)
+            by_order.pop(oid, None)
             continue
-        by_order.setdefault(on, []).append(it)
+        by_order.setdefault(oid, []).append(it)
 
     affected = set(by_order) | deleted
     rows = [_order_row(it) for lines in by_order.values() for it in lines]
@@ -115,13 +117,12 @@ async def ingest_order_lines(items: list[dict]) -> dict:
     async with engine.begin() as conn:
         if affected:
             await conn.execute(
-                delete(t.order_lines).where(t.order_lines.c.order_num.in_(affected))
+                delete(t.order_lines).where(t.order_lines.c.order_id.in_(affected))
             )
         if rows:
             await conn.execute(insert(t.order_lines), rows)
-            # Append-only снимок присланного состояния заказов (ingested_at — по
-            # умолчанию now() в БД, одинаков для всей пачки). order_lines хранит
-            # текущий срез, versions — историю версий для диффа (сценарий №1).
+            # Append-only снимок присланного состояния (ingested_at = now() в БД,
+            # одинаков для всей пачки) — версия заказа для диффа.
             await conn.execute(insert(t.order_line_versions), rows)
     return {"accepted": len(rows), "orders_affected": len(affected)}
 
@@ -190,6 +191,57 @@ async def get_client_bought_n3_ids(client_id: str) -> set[str]:
     )
     async with engine.connect() as conn:
         return {r[0] for r in (await conn.execute(q)).all()}
+
+
+# --- Order versions / diff (для аналитики эффекта) ------------------------
+
+async def get_order_diff(order_id: str) -> list[dict]:
+    """Дифф заказа: первая версия (исходное) vs последняя (финал) по (n3_id, n4_id).
+    status: added / removed / increased / decreased / unchanged. Основа воронки."""
+    sql = text(
+        """
+        WITH stamps AS (
+            SELECT min(ingested_at) AS first_at, max(ingested_at) AS last_at
+            FROM order_line_versions WHERE order_id = :oid
+        ),
+        first_v AS (
+            SELECT n3_id, n4_id, sum(qty) AS qty
+            FROM order_line_versions v, stamps s
+            WHERE v.order_id = :oid AND v.ingested_at = s.first_at
+            GROUP BY n3_id, n4_id
+        ),
+        last_v AS (
+            SELECT n3_id, n4_id, sum(qty) AS qty
+            FROM order_line_versions v, stamps s
+            WHERE v.order_id = :oid AND v.ingested_at = s.last_at
+            GROUP BY n3_id, n4_id
+        )
+        SELECT n3_id, n4_id,
+               COALESCE(f.qty, 0) AS qty_first,
+               COALESCE(l.qty, 0) AS qty_last
+        FROM first_v f FULL OUTER JOIN last_v l USING (n3_id, n4_id)
+        ORDER BY n3_id, n4_id
+        """
+    )
+    async with engine.connect() as conn:
+        rows = (await conn.execute(sql, {"oid": order_id})).all()
+    out: list[dict] = []
+    for r in rows:
+        qf, ql = float(r.qty_first), float(r.qty_last)
+        if qf == 0 and ql > 0:
+            status = "added"
+        elif ql == 0 and qf > 0:
+            status = "removed"
+        elif ql > qf:
+            status = "increased"
+        elif ql < qf:
+            status = "decreased"
+        else:
+            status = "unchanged"
+        out.append({"n3_id": r.n3_id, "n4_id": r.n4_id,
+                    "qty_first": qf, "qty_last": ql,
+                    "delta": round(ql - qf, 3), "status": status})
+    return out
 
 
 # --- Aggregates -----------------------------------------------------------
