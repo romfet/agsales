@@ -36,14 +36,14 @@ test:
     - docker rm -f "pg-$CI_PIPELINE_ID" 2>/dev/null || true
     - docker network rm "ci-$CI_PIPELINE_ID" 2>/dev/null || true
 
-# --- Деплой на этот же хост через docker compose (только master) ---
+# --- Деплой на этот же хост через docker compose (только main) ---
 deploy:
   stage: deploy
   tags: [docker]
   rules:
     - if: '$INSPECT == "true"'   # mini-пайплайн осмотра — без деплоя
       when: never
-    - if: '$CI_COMMIT_BRANCH == "master"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
   environment:
     name: production
   resource_group: production        # не пересекать параллельные деплои

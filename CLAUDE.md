@@ -42,7 +42,7 @@ python -m backend.db.schema
 pytest -c backend/pytest.ini -m integration
 ```
 
-Integration tests seed mock data themselves via `sync.seed_mock.seed()`. There is no linter configured. CI (GitLab, `.gitlab-ci.yml`) runs the full suite against an ephemeral Postgres and **deploys on branch `master`** to the stand via `docker compose`.
+Integration tests seed mock data themselves via `sync.seed_mock.seed()`. There is no linter configured. CI (GitLab, `.gitlab-ci.yml`) runs the full suite against an ephemeral Postgres and **deploys on branch `main`** to the stand via `docker compose`.
 
 ## Architecture
 
