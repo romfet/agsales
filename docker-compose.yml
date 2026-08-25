@@ -4,7 +4,9 @@
 #
 #   docker compose up -d --build        # API + docs at http://localhost:5050/docs
 #
-# NOTE: `migrate` seeds MOCK history for local dev until the real 1С feed lands.
+# NOTE: `migrate` only applies the schema (no mock seed) — stand starts empty and
+# is filled by the real 1С feed. For local dev with mock data run `python -m
+# backend.sync.seed_mock` manually.
 name: agsales
 
 services:
@@ -29,7 +31,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     image: agsales-backend
-    command: sh -c "python -m backend.db.schema && python -m backend.sync.seed_mock"
+    command: python -m backend.db.schema
     environment:
       DATABASE_URL: postgresql+psycopg://agsales:agsales@db:5432/agsales
     depends_on:

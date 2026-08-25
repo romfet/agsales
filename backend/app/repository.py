@@ -54,8 +54,7 @@ def _row_to_niche_profile_n3(r) -> dict:
 # --- Ingest (1С feed → raw table) ----------------------------------------
 
 _ORDER_FIELDS = ("order_id", "order_num", "order_date", "client_id", "client_name",
-                 "niche", "n3_id", "n4_id", "qty",
-                 "rec_source", "rec_kind", "rec_origin_order")
+                 "niche", "n3_id", "n4_id", "qty")
 
 
 def _to_date(v) -> date | None:
@@ -83,8 +82,6 @@ def _content_hash(lines: list[dict]) -> str:
 def _order_row(it: dict) -> dict:
     row = {k: it.get(k) for k in _ORDER_FIELDS}
     row["order_date"] = _to_date(row.get("order_date"))
-    # rec_source — NOT NULL DEFAULT false: приводим к bool (None → False).
-    row["rec_source"] = bool(row.get("rec_source"))
     return row
 
 

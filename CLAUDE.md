@@ -21,10 +21,10 @@ Everything runs as Python modules from the **repo root** (imports are `backend.a
 docker compose up -d --build        # API + OpenAPI docs at http://localhost:5050/docs
 ```
 
-This starts four services: `db` (Postgres 16, **not** published to the host), `migrate` (one-shot: applies the schema then seeds MOCK data — `python -m backend.db.schema && python -m backend.sync.seed_mock`), `api` (uvicorn on 5050), and `worker` (rebuilds aggregates on an interval).
+This starts four services: `db` (Postgres 16, **not** published to the host), `migrate` (one-shot: applies the schema — `python -m backend.db.schema`; **no mock seed** — the stand starts empty and is filled by the real 1С feed), `api` (uvicorn on 5050), and `worker` (rebuilds aggregates on an interval).
 
 - `docker compose down -v` wipes the DB volume. **Schema changes require this** — there are no incremental migrations (see below).
-- The `migrate` step seeds synthetic history (`sync/mock_source.py`) until the real 1С feed lands. `KNOWN_CLIENT = clnt0000-…-000000000000` is mock client #1 (deterministic, `seed=42`).
+- For local dev with synthetic data, run `python -m backend.sync.seed_mock` manually (`sync/mock_source.py`; `KNOWN_CLIENT = clnt0000-…-000000000000` is mock client #1, deterministic, `seed=42`). Integration tests seed it themselves.
 - Legacy MVP: `docker compose -f docker-compose.legacy.yml up --build` (serves the old Flask app on 5050; needs `.env` with `OPENROUTER_API_KEY`).
 
 ### Env

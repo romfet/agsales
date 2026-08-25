@@ -4,7 +4,6 @@ Skipped unless a DB is reachable. Requires the schema applied
 (``python -m backend.db.schema``).
 """
 import os
-import pathlib
 
 import pytest
 from sqlalchemy import text
@@ -71,44 +70,6 @@ async def test_client_profile_n3_is_one_row_per_subgroup():
     assert rows[0]["total_orders"] == 2
     assert rows[0]["frequency_pct"] == 100.0
     assert rows[0]["n4_id"] in {"n4-1", "n4-2"}   # представительный SKU
-
-
-async def test_recommendation_marker_ingest_and_effect_view():
-    """Маркер рекомендации: ingest сохраняет rec_source/kind/origin; витрина
-    effect_metrics делит сценарии по origin (=order_num → №1, иначе → №2)."""
-    def line(order, n3, n4, qty, rec=False, kind=None, origin=None):
-        return {"order_id": order, "order_num": order, "order_date": "2026-07-01",
-                "client_id": "cli-mark", "client_name": "M", "niche": "НишаM",
-                "n3_id": n3, "n4_id": n4, "qty": qty,
-                "rec_source": rec, "rec_kind": kind, "rec_origin_order": origin}
-
-    await repo.ingest_order_lines([
-        line("M-1", "n3-a", "n4-a", 5),                                         # обычная позиция
-        line("M-1", "n3-b", "n4-b", 2, rec=True, kind="forgotten", origin="M-1"),  # сценарий №1
-        line("M-2", "n3-c", "n4-c", 7, rec=True, kind="niche", origin="M-1"),      # сценарий №2
-    ])
-
-    view_sql = (pathlib.Path(__file__).resolve().parents[1] / "db" / "effect_metrics.sql").read_text(encoding="utf-8")
-    async with engine.begin() as conn:
-        stored = {
-            (r.order_num, r.n3_id): (r.rec_source, r.rec_kind, r.rec_origin_order)
-            for r in (await conn.execute(text(
-                "SELECT order_num, n3_id, rec_source, rec_kind, rec_origin_order "
-                "FROM order_lines WHERE client_id='cli-mark'"))).all()
-        }
-        await conn.exec_driver_sql(view_sql)   # прод-SQL витрины (CREATE OR REPLACE VIEW)
-        eff = {
-            r.scenario: (r.rec_kind, float(r.added_tonnage))
-            for r in (await conn.execute(text(
-                "SELECT scenario, rec_kind, added_tonnage FROM effect_metrics "
-                "WHERE niche='НишаM'"))).all()
-        }
-
-    assert stored[("M-1", "n3-a")] == (False, None, None)                 # обычная — без маркера
-    assert stored[("M-1", "n3-b")] == (True, "forgotten", "M-1")
-    assert stored[("M-2", "n3-c")] == (True, "niche", "M-1")
-    assert eff["Сценарий №1"] == ("forgotten", 2.0)                       # добавлено в тот же заказ
-    assert eff["Сценарий №2"] == ("niche", 7.0)                           # новый заказ
 
 
 async def test_order_versioning_and_diff():
