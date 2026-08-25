@@ -74,7 +74,7 @@ publish:
   rules:
     - if: '$INSPECT == "true"'
       when: never
-    - if: '$CI_COMMIT_BRANCH == "main" && $NEXUS_PASSWORD != ""'
+    - if: '$CI_COMMIT_BRANCH == "main" && $NEXUS_PASSWORD'
   script:
     - echo "$NEXUS_PASSWORD" | docker login "$NEXUS_REGISTRY" -u "$NEXUS_USER" --password-stdin
     # бэк: сборку деплоя (agsales-backend:latest) — перезаписываем latest + пин по SHA
