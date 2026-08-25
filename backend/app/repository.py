@@ -7,7 +7,7 @@ is by GUID (client_id / n3_id / n4_id); names are display-only.
 from __future__ import annotations
 
 import hashlib
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -58,6 +58,20 @@ _ORDER_FIELDS = ("order_id", "order_num", "order_date", "client_id", "client_nam
                  "rec_source", "rec_kind", "rec_origin_order")
 
 
+def _to_date(v) -> date | None:
+    """Дата из ISO-строки или datetime, устойчиво к времени: '2025-01-01T08:00'
+    и '2025-01-01' → date. (1С шлёт даты и с временем — не роняем ingest.)"""
+    if v is None or v == "":
+        return None
+    if isinstance(v, datetime):     # datetime — подкласс date, проверяем первым
+        return v.date()
+    if isinstance(v, date):
+        return v
+    if isinstance(v, str):
+        return date.fromisoformat(v[:10])
+    return None
+
+
 def _content_hash(lines: list[dict]) -> str:
     """Хэш состава заказа (набор строк n3×n4×qty) — для дедупа неизменных версий."""
     parts = sorted(
@@ -68,13 +82,7 @@ def _content_hash(lines: list[dict]) -> str:
 
 def _order_row(it: dict) -> dict:
     row = {k: it.get(k) for k in _ORDER_FIELDS}
-    od = row.get("order_date")
-    if isinstance(od, str) and od:
-        row["order_date"] = date.fromisoformat(od)
-    elif isinstance(od, date):
-        row["order_date"] = od
-    else:
-        row["order_date"] = None
+    row["order_date"] = _to_date(row.get("order_date"))
     # rec_source — NOT NULL DEFAULT false: приводим к bool (None → False).
     row["rec_source"] = bool(row.get("rec_source"))
     return row
@@ -140,13 +148,7 @@ _SHIPMENT_FIELDS = ("shipment_id", "shipment_num", "shipment_date", "order_id",
 
 def _shipment_row(it: dict) -> dict:
     row = {k: it.get(k) for k in _SHIPMENT_FIELDS}
-    sd = row.get("shipment_date")
-    if isinstance(sd, str) and sd:
-        row["shipment_date"] = date.fromisoformat(sd)
-    elif isinstance(sd, date):
-        row["shipment_date"] = sd
-    else:
-        row["shipment_date"] = None
+    row["shipment_date"] = _to_date(row.get("shipment_date"))
     return row
 
 

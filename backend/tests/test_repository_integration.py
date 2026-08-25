@@ -164,3 +164,35 @@ async def test_ingest_shipments_upsert_and_m2m():
     assert got[("S1", "ORD-B")] == 3.0
     assert got[("S2", "ORD-A")] == 2.0     # тот же заказ в другой отгрузке
     assert len(rows) == 3
+
+
+async def test_products_catalog_covers_ordered_not_shipped():
+    """Ревью #1: каталог products (n4→n3) покрывает товары из ЗАКАЗОВ, даже если
+    они ещё не отгружены — иначе позиция черновика не резолвилась бы."""
+    await repo.ingest_order_lines([{
+        "order_id": "ORD-P", "order_num": "ORD-P", "order_date": "2026-06-01",
+        "client_id": "cli-p", "niche": "НишаP", "n3_id": "n3-ord", "n4_id": "n4-ordonly", "qty": 1,
+    }])
+    await repo.refresh_aggregates()
+    resolved = await repo.get_n3_for_n4(["n4-ordonly"])
+    assert resolved.get("n4-ordonly") == "n3-ord"   # резолв из заказов, не только отгрузок
+
+
+async def test_ingest_accepts_datetime_string_date():
+    """Ревью #2: дата как ISO-datetime ('...T..') не роняет ingest — берём дату."""
+    from datetime import date as _date
+
+    await repo.ingest_order_lines([{
+        "order_id": "ORD-DT", "order_num": "ORD-DT", "order_date": "2026-06-15T08:30:00",
+        "client_id": "cli-dt", "niche": "НишаDT", "n3_id": "n3-dt", "n4_id": "n4-dt", "qty": 1,
+    }])
+    await repo.ingest_shipment_lines([{
+        "shipment_id": "SH-DT", "shipment_num": "SH-DT", "shipment_date": "2026-06-16T00:00:00",
+        "order_id": "ORD-DT", "client_id": "cli-dt", "niche": "НишаDT",
+        "n3_id": "n3-dt", "n4_id": "n4-dt", "qty": 1,
+    }])
+    async with engine.begin() as conn:
+        od = (await conn.execute(text("SELECT order_date FROM order_lines WHERE order_id='ORD-DT'"))).scalar()
+        sd = (await conn.execute(text("SELECT shipment_date FROM shipment_lines WHERE shipment_id='SH-DT'"))).scalar()
+    assert od == _date(2026, 6, 15)
+    assert sd == _date(2026, 6, 16)

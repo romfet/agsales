@@ -92,9 +92,16 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS niche_dim AS
     FROM shipment_lines WHERE niche IS NOT NULL GROUP BY niche WITH NO DATA;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_niche_dim ON niche_dim (niche);
 
+-- Каталог n4→n3 для резолва позиций черновика в /analyze. Строится из ЗАКАЗОВ ∪
+-- ОТГРУЗОК, чтобы резолвился и товар, который заказан, но ещё не отгружён (иначе
+-- строка черновика молча выпадала бы и подгруппа ложно считалась «забытой»).
 CREATE MATERIALIZED VIEW IF NOT EXISTS products AS
     SELECT n4_id, max(n3_id) AS n3_id
-    FROM shipment_lines GROUP BY n4_id WITH NO DATA;
+    FROM (
+        SELECT n4_id, n3_id FROM order_lines
+        UNION ALL
+        SELECT n4_id, n3_id FROM shipment_lines
+    ) u GROUP BY n4_id WITH NO DATA;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_products ON products (n4_id);
 
 -- Профили на уровне N3 (подгруппа) — источник рекомендаций (анализ идёт по N3).
