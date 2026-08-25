@@ -21,9 +21,9 @@ Everything runs as Python modules from the **repo root** (imports are `backend.a
 docker compose up -d --build        # API + OpenAPI docs at http://localhost:5050/docs
 ```
 
-This starts four services: `db` (Postgres 16, **not** published to the host), `migrate` (one-shot: applies the schema — `python -m backend.db.schema`; **no mock seed** — the stand starts empty and is filled by the real 1С feed), `api` (uvicorn on 5050), and `worker` (rebuilds aggregates on an interval).
+This starts four services: `db` (Postgres 16, **not** published to the host), `migrate` (one-shot: applies pending migrations — `python -m backend.db.migrate`; **no mock seed** — the stand starts empty and is filled by the real 1С feed), `api` (uvicorn on 5050), and `worker` (rebuilds aggregates on an interval).
 
-- `docker compose down -v` wipes the DB volume. **Schema changes require this** — there are no incremental migrations (see below).
+- `docker compose down -v` wipes the DB volume. **Avoid it on the stand** — real 1С data must survive. Schema changes ship as **incremental migrations** (see below), not by recreating the volume.
 - For local dev with synthetic data, run `python -m backend.sync.seed_mock` manually (`sync/mock_source.py`; `KNOWN_CLIENT = clnt0000-…-000000000000` is mock client #1, deterministic, `seed=42`). Integration tests seed it themselves.
 - Legacy MVP: `docker compose -f docker-compose.legacy.yml up --build` (serves the old Flask app on 5050; needs `.env` with `OPENROUTER_API_KEY`).
 
@@ -37,8 +37,8 @@ Copy `backend/.env.example`. Key settings (`backend/app/core/config.py`): `DATAB
 # Pure rule/auth tests — no DB:
 pytest -c backend/pytest.ini backend/tests/test_analyzer.py backend/tests/test_auth.py
 
-# Integration — needs a reachable, schema-applied DB (set DATABASE_URL or TEST_DATABASE_URL):
-python -m backend.db.schema
+# Integration — needs a reachable, migrated DB (set DATABASE_URL or TEST_DATABASE_URL):
+python -m backend.db.migrate
 pytest -c backend/pytest.ini -m integration
 ```
 
@@ -64,21 +64,21 @@ operator/1С ──POST /api/analyze {client + draft lines}──► services.an
 - **`app/schemas.py`** — Pydantic models = the API contract (request validation + response shape).
 - **`app/core/`** — `config.py` (settings), `security.py` (JWT issue/verify + `require_scope` dependency factory).
 - **`app/db/`** — `session.py` (one shared async engine), `tables.py` (Core `Table` objects for typed queries — reading only; the schema is not defined here).
-- **`db/schema.sql`** + **`db/schema.py`** — the **entire schema** (tables, indexes, materialized views), applied idempotently (`CREATE … IF NOT EXISTS`). **No Alembic / no migrations** — change `schema.sql` and recreate the volume. `main.py` is the source of truth for the endpoint surface.
+- **`db/migrations/*.sql`** + **`db/migrate.py`** — **ordered SQL migrations** (lightweight runner; applied-versions tracked in `schema_migrations`). `0001_baseline.sql` is the full schema (idempotent `CREATE … IF NOT EXISTS`, safe on a populated stand). **Schema changes = add a new `NNNN_*.sql` (ALTER/CREATE)** — never edit an applied migration, never recreate the volume (real 1С data must survive). `migrate.py` is run by the `migrate` container on every deploy. `main.py` is the source of truth for the endpoint surface.
 - **`sync/`** — `worker.py` (APScheduler loop rebuilding aggregates every `REFRESH_INTERVAL_MINUTES`), `mock_source.py` (synthetic GUID-keyed rows), `seed_mock.py` (pushes them through the real ingest path — dev only).
 
 ## Domain model (key invariants)
 
 - **Identity is by GUID**: `client_id`, `n3_id`, `n4_id` (and `order_num` for orders). **Product/subgroup names are NOT stored** — 1С resolves display names by GUID. `client_name` is the only carried display field; `niche` (= Отрасль) is a plain string.
 - Hierarchy is **N1 → N2 → N3 → N4**, where **N3 = подгруппа** and **N4 = товар/SKU**. Analysis matches at **N3**; `n4_id` is carried through for reference. Draft-order lines may send `n3_id` directly or `n4_id` (n3 resolved server-side from the `products` matview).
-- **"Frequency"** = *share of the client's (or niche's) orders that contain the item*, not a raw count (`frequency_pct` / `niche_freq_pct`, computed in `schema.sql`).
+- **"Frequency"** = *share of the client's (or niche's) orders that contain the item*, not a raw count (`frequency_pct` / `niche_freq_pct`, computed in `db/migrations/0001_baseline.sql`).
 - A client's niche is the **mode** (most common) niche across their rows (`client_dim` matview).
 - History is a **delta owned by 1С**; there are no deletions in practice. Aggregates are **materialized on sync**, never computed per-request.
 - Quantities (`qty`) are tonnes, kept as `numeric`, rounded to 3 decimals.
 
 ## Conventions
 
-- Adding a data field means threading it through the whole pipe: `schema.sql` (raw column + every matview that carries it) → `db/tables.py` (Core columns) → `repository.py` row-mappers → `schemas.py` (Pydantic) → `domain/analyzer.py` / `services.py`. Then recreate the DB volume.
+- Adding a data field means threading it through the whole pipe: a **new migration** `db/migrations/NNNN_*.sql` (ALTER the raw table + every matview that carries it — drop/recreate the matview inside the migration) → `db/tables.py` (Core columns) → `repository.py` row-mappers → `schemas.py` (Pydantic) → `domain/analyzer.py` / `services.py`. Then deploy — `migrate.py` applies it in place (no volume recreation).
 - API errors are `HTTPException(status, detail="<Russian message>")`; the response shape is `{"detail": "…"}`.
 - Auth model: clients never send raw secrets to protected endpoints — they exchange `client_id`+`client_secret` at `/api/auth/token` for a short-lived JWT carrying scopes (`ingest`, `analyze`), then send `Authorization: Bearer <token>`. Empty `AUTH_JWT_SECRET` bypasses all checks (dev).
 - The 1С integration contract lives in `docs/`: `onec_api.md` is the canonical stand format (endpoints + JSON); `onec_integration.md` is the overview and `onec_ingest_contract.md` the ingest detail. Clean customer-facing copies live in `docs/Заказчик/`. The effect-metrics spec is `docs/effect_metrics.md`; the recommendation math (aggregates + both analyses, with exact formulas) is `docs/Математика_рекомендаций.md`. Keep code and these docs in sync when the contract changes.

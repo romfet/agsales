@@ -1,7 +1,9 @@
--- Единая схема БД (без миграций). Идемпотентна: применяется на старте контейнера.
--- Идентичность по GUID: client_id / n3_id / n4_id. Имён товара/подгруппы нет
--- (1С резолвит их у себя по GUID). niche = Отрасль, заказ = order_num.
--- Изменение схемы = пересоздать том БД (docker compose down -v), не ALTER.
+-- Миграция 0001 — базовая схема (baseline). Идемпотентна (CREATE … IF NOT EXISTS):
+-- безопасно применяется и на уже наполненном стенде (объекты не пересоздаются).
+-- Идентичность по GUID: client_id / niche / n3_id / n4_id / order_id / shipment_id.
+-- Имён товара/подгруппы нет (1С резолвит их у себя по GUID). niche = Отрасль.
+-- Последующие изменения схемы — НОВЫЙ файл db/migrations/NNNN_*.sql (ALTER/CREATE),
+-- НЕ правка этого файла и НЕ пересоздание тома (реальные данные 1С должны выжить).
 
 CREATE TABLE IF NOT EXISTS order_lines (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

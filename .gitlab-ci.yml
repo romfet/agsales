@@ -31,7 +31,7 @@ test:
     - docker run --rm --network "ci-$CI_PIPELINE_ID"
         -e DATABASE_URL=postgresql+psycopg://agsales:agsales@db:5432/agsales
         agsales-backend:ci
-        sh -c "python -m backend.db.schema && python -m pytest -c backend/pytest.ini"
+        sh -c "python -m backend.db.migrate && python -m pytest -c backend/pytest.ini"
   after_script:
     - docker rm -f "pg-$CI_PIPELINE_ID" 2>/dev/null || true
     - docker network rm "ci-$CI_PIPELINE_ID" 2>/dev/null || true
@@ -48,8 +48,9 @@ deploy:
     name: production
   resource_group: production        # не пересекать параллельные деплои
   script:
-    # CLEAN=true (переменная пайплайна) — пересоздать том БД с нуля по schema.sql.
-    # Обычные деплои этого НЕ делают (данные сохраняются).
+    # Обычный деплой применяет миграции (backend.db.migrate) поверх существующих
+    # данных — том НЕ пересоздаётся. CLEAN=true — аварийный полный сброс тома (только
+    # вручную, когда данные не нужны); в штатном цикле не используется.
     - 'if [ "$CLEAN" = "true" ]; then echo "CLEAN: wiping DB volume"; docker compose down -v; fi'
     # секреты из CI/CD Variables → .env (его читает docker-compose)
     - printf 'AUTH_JWT_SECRET=%s\n'  "$AUTH_JWT_SECRET" >  .env

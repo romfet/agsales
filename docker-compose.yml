@@ -31,7 +31,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     image: agsales-backend
-    command: python -m backend.db.schema
+    command: python -m backend.db.migrate
     environment:
       DATABASE_URL: postgresql+psycopg://agsales:agsales@db:5432/agsales
     depends_on:

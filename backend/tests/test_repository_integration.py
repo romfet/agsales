@@ -1,7 +1,7 @@
 """Integration tests against a real PostgreSQL.
 
 Skipped unless a DB is reachable. Requires the schema applied
-(``python -m backend.db.schema``).
+(``python -m backend.db.migrate``).
 """
 import os
 

@@ -1,11 +1,11 @@
 """Table/materialized-view definitions used for *reading* and ingest.
 
-Schema is created by backend/db/schema.sql (no migrations). These Core objects
-exist only so the repository can build typed, parameterized queries.
+Schema is created by the migrations in backend/db/migrations/ (see db/migrate.py).
+These Core objects exist only so the repository can build typed, parameterized queries.
 
 Identity by GUID: client → client_id, subgroup → n3_id, product → n4_id.
 Names of subgroup/product are NOT stored (1С resolves them by GUID).
-Order key = order_num; niche = Отрасль.
+Order key = order_id (GUID); order_num is a display number. niche = Отрасль (GUID).
 """
 from sqlalchemy import (
     BigInteger,
@@ -36,7 +36,7 @@ order_lines = Table(
     Column("qty", Numeric, nullable=False),
 )
 
-# Append-only снимки версий заказа (см. schema.sql). id/ingested_at/version_seq
+# Append-only снимки версий заказа (см. migrations/0001_baseline.sql). id/ingested_at/version_seq
 # заполняются при вставке.
 order_line_versions = Table(
     "order_line_versions",

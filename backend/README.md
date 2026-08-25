@@ -43,14 +43,17 @@ pip install -r backend/requirements.txt
 export DATABASE_URL="postgresql+psycopg://agsales:agsales@localhost:5432/agsales"
 
 docker compose -f backend/docker-compose.yml up -d   # 1. Postgres only
-python -m backend.db.schema                           # 2. Tables + materialized views (idempotent; no migrations)
+python -m backend.db.migrate                          # 2. Apply migrations (tables + materialized views)
 python -m backend.sync.seed_mock                      # 3. Seed mock data + refresh aggregates
 uvicorn backend.app.main:app --reload --port 5050     # 4. API
 python -m backend.sync.worker                         # (optional) aggregate-refresh loop
 ```
 
-Schema lives entirely in `db/schema.sql` — **no Alembic / no migrations**. To
-change it, edit the SQL and recreate the DB volume.
+Schema is a set of **ordered SQL migrations** in `db/migrations/` applied by
+`db/migrate.py` (applied versions tracked in `schema_migrations`). `0001_baseline.sql`
+is the full schema (idempotent). To change the schema, **add a new `NNNN_*.sql`**
+(ALTER/CREATE) — do not edit an applied migration or recreate the DB volume (stand
+data must survive).
 
 ## API
 
@@ -77,8 +80,8 @@ registered via `AUTH_CLIENTS` (JSON). **Empty `AUTH_JWT_SECRET` = auth OPEN
 # Pure rule/auth tests — no DB:
 pytest -c backend/pytest.ini backend/tests/test_analyzer.py backend/tests/test_auth.py
 
-# Integration (needs DB up + schema applied + DATABASE_URL/TEST_DATABASE_URL):
-python -m backend.db.schema
+# Integration (needs DB up + migrated + DATABASE_URL/TEST_DATABASE_URL):
+python -m backend.db.migrate
 pytest -c backend/pytest.ini -m integration
 ```
 
