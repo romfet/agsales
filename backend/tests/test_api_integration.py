@@ -12,7 +12,7 @@ from httpx import ASGITransport
 from backend.app.main import app
 from backend.sync.seed_mock import seed
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio(loop_scope="session")]
 
 _DB = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
 

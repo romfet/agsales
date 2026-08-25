@@ -57,9 +57,14 @@ _ORDER_FIELDS = ("order_id", "order_num", "order_date", "client_id", "client_nam
                  "niche", "n3_id", "n4_id", "qty")
 
 
+# Не-ISO форматы дат, которые может прислать 1С (после провала ISO).
+_DATE_FORMATS = ("%d.%m.%Y", "%d/%m/%Y", "%Y/%m/%d", "%d.%m.%y")
+
+
 def _to_date(v) -> date | None:
-    """Дата из ISO-строки или datetime, устойчиво к времени: '2025-01-01T08:00'
-    и '2025-01-01' → date. (1С шлёт даты и с временем — не роняем ingest.)"""
+    """Дата из datetime / ISO-строки / распространённых не-ISO форматов, устойчиво:
+    '2025-01-01T08:00', '2025-01-01', '01.01.2025', '2025/01/01' → date.
+    Непарсируемое значение → None (НЕ роняем всю пачку ingest из-за одной даты)."""
     if v is None or v == "":
         return None
     if isinstance(v, datetime):     # datetime — подкласс date, проверяем первым
@@ -67,7 +72,16 @@ def _to_date(v) -> date | None:
     if isinstance(v, date):
         return v
     if isinstance(v, str):
-        return date.fromisoformat(v[:10])
+        s = v.strip()
+        try:
+            return date.fromisoformat(s[:10])   # ISO (в т.ч. с временем)
+        except ValueError:
+            for fmt in _DATE_FORMATS:
+                try:
+                    return datetime.strptime(s, fmt).date()
+                except ValueError:
+                    continue
+            return None
     return None
 
 
@@ -292,15 +306,29 @@ async def count_order_lines() -> int:
         return int(await conn.scalar(text("SELECT count(*) FROM order_lines")))
 
 
+# Стабильный ключ session-level advisory-lock: сериализует перекрывающиеся refresh.
+_REFRESH_LOCK_KEY = 776610
+
+
 async def refresh_aggregates() -> None:
     """Rebuild all materialized views in dependency order (CONCURRENTLY once
-    populated; AUTOCOMMIT since CONCURRENTLY can't run in a transaction)."""
+    populated; AUTOCOMMIT since CONCURRENTLY can't run in a transaction).
+
+    Три пути зовут refresh (воркер по таймеру, /commit, /refresh). Берём
+    блокирующий advisory-lock, чтобы одновременно шёл ровно один rebuild: иначе два
+    ``REFRESH … CONCURRENTLY`` одного матвью конфликтуют на его блокировке, а данные
+    всё равно перестраиваются дважды. Блокирующий (а не try) — чтобы refresh после
+    /commit гарантированно отработал и включил только что загруженные данные."""
     ac_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
     async with ac_engine.connect() as conn:
-        for mv in t.MATERIALIZED_VIEWS:
-            populated = await conn.scalar(
-                text("SELECT ispopulated FROM pg_matviews WHERE matviewname = :n"),
-                {"n": mv},
-            )
-            mode = "CONCURRENTLY " if populated else ""
-            await conn.execute(text(f"REFRESH MATERIALIZED VIEW {mode}{mv}"))
+        await conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": _REFRESH_LOCK_KEY})
+        try:
+            for mv in t.MATERIALIZED_VIEWS:
+                populated = await conn.scalar(
+                    text("SELECT ispopulated FROM pg_matviews WHERE matviewname = :n"),
+                    {"n": mv},
+                )
+                mode = "CONCURRENTLY " if populated else ""
+                await conn.execute(text(f"REFRESH MATERIALIZED VIEW {mode}{mv}"))
+        finally:
+            await conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _REFRESH_LOCK_KEY})

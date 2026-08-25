@@ -20,6 +20,7 @@ import re
 from sqlalchemy import text
 
 from backend.app.db.session import engine
+from backend.app.repository import refresh_aggregates
 
 _MIGRATIONS = pathlib.Path(__file__).with_name("migrations")
 
@@ -68,6 +69,10 @@ async def migrate() -> list[str]:
 async def _main() -> None:
     newly = await migrate()
     print(f"migrations applied: {newly}" if newly else "migrations: up to date")
+    # Пополняем матвью (созданы WITH NO DATA), чтобы api не отдавал 500 «matview has
+    # not been populated» на холодном старте. api/worker ждут успех этого контейнера.
+    await refresh_aggregates()
+    print("aggregates refreshed")
     await engine.dispose()
 
 

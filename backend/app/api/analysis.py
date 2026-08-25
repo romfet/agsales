@@ -16,7 +16,10 @@ router = APIRouter(
 
 @router.post("/analyze", response_model=AnalyzeOut)
 async def analyze(payload: AnalyzeIn):
-    if not payload.lines:
+    # Пустой список ИЛИ строки без единого идентификатора (n3_id/n4_id) — заявку не
+    # разобрать: иначе набор позиций пуст и ВСЁ, что клиент обычно берёт, ложно
+    # помечается «missing».
+    if not payload.lines or all(not (l.n3_id or l.n4_id) for l in payload.lines):
         raise HTTPException(status_code=400, detail="Заявка пуста")
     return await services.analyze(
         payload.client_id,

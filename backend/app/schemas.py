@@ -1,7 +1,8 @@
 """Pydantic models = the API contract (request validation + response shape).
 
-Identity by GUID: client_id, n3_id, n4_id. Names (*_name) are display-only.
-Order key = order_num.
+Identity by GUID: client_id, niche, n3_id, n4_id, order_id, shipment_id. Names
+(*_name) are display-only. Order key = order_id (GUID); order_num/shipment_num are
+display numbers.
 """
 from __future__ import annotations
 
