@@ -176,6 +176,28 @@ async def ingest_shipment_lines(items: list[dict]) -> dict:
     return {"accepted": len(rows), "shipments_affected": len(affected)}
 
 
+# --- Recommendation log (сигнал «ассистент сработал» + что рекомендовали) --
+
+async def log_recommendations(
+    client_id: str, order_id: str | None,
+    forgotten: list[dict], niche_recs: list[dict],
+) -> None:
+    """Записать выданные рекомендации (по строке на позицию) в recommendation_log.
+    created_at проставляет БД. Пусто — не пишем."""
+    rows = [
+        {"client_id": client_id, "order_id": order_id, "kind": "forgotten",
+         "n3_id": r["n3_id"], "n4_id": r.get("n4_id"), "priority": r.get("priority")}
+        for r in forgotten
+    ] + [
+        {"client_id": client_id, "order_id": order_id, "kind": "niche",
+         "n3_id": r["n3_id"], "n4_id": r.get("n4_id"), "priority": r.get("priority")}
+        for r in niche_recs
+    ]
+    if rows:
+        async with engine.begin() as conn:
+            await conn.execute(insert(t.recommendation_log), rows)
+
+
 # --- Analyze reads --------------------------------------------------------
 
 async def get_client_niche(client_id: str) -> str | None:

@@ -72,6 +72,19 @@ shipment_lines = Table(
     Column("qty", Numeric, nullable=False),
 )
 
+recommendation_log = Table(
+    "recommendation_log",
+    metadata,
+    Column("id", BigInteger, primary_key=True),
+    Column("created_at", DateTime(timezone=True)),
+    Column("client_id", Text, nullable=False),
+    Column("order_id", Text),
+    Column("kind", Text, nullable=False),
+    Column("n3_id", Text, nullable=False),
+    Column("n4_id", Text),
+    Column("priority", Text),
+)
+
 client_dim = Table(
     "client_dim",
     metadata,
@@ -132,4 +145,5 @@ MATERIALIZED_VIEWS = [
     "products",
     "client_profile_n3",
     "niche_profile_n3",
+    "effect_funnel",
 ]

@@ -65,6 +65,23 @@ CREATE INDEX IF NOT EXISTS ix_shipment_lines_order    ON shipment_lines (order_i
 CREATE INDEX IF NOT EXISTS ix_shipment_lines_client   ON shipment_lines (client_id);
 CREATE INDEX IF NOT EXISTS ix_shipment_lines_niche    ON shipment_lines (niche);
 
+-- Журнал выданных рекомендаций (append-only). Пишется на каждый вызов /api/analyze:
+-- одна строка на рекомендованную позицию. created_at = «ассистент сработал»,
+-- order_id = заказ, по которому шёл анализ. Даёт когорту «с ассистентом» и что
+-- именно рекомендовали (для атрибуции A/B/C в BI).
+CREATE TABLE IF NOT EXISTS recommendation_log (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    client_id  text NOT NULL,
+    order_id   text,                -- заказ, по которому шёл анализ (может быть NULL)
+    kind       text NOT NULL,       -- 'forgotten' | 'niche'
+    n3_id      text NOT NULL,
+    n4_id      text,
+    priority   text
+);
+CREATE INDEX IF NOT EXISTS ix_reclog_client ON recommendation_log (client_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_reclog_order  ON recommendation_log (order_id);
+
 CREATE MATERIALIZED VIEW IF NOT EXISTS client_dim AS
     SELECT client_id,
            max(client_name)                      AS client_name,
@@ -154,3 +171,63 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS niche_profile_n3 AS
     WITH NO DATA;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_niche_profile_n3 ON niche_profile_n3 (niche, n3_id);
 CREATE INDEX IF NOT EXISTS ix_niche_profile_n3_niche ON niche_profile_n3 (niche);
+
+-- Витрина воронки эффекта для BI (Фаза 4). Грейн: (order_id, n3_id, n4_id). Только
+-- GUID + меры — наименования BI резолвит из справочников 1С. Источники: версии
+-- заказа (первая=исходное O / последняя=финал F по version_seq) + отгрузки (факт).
+-- Меры: тоннаж (original/final/added/shipped) + флаги-счётчики позиций (is_*).
+-- Воронка в BI: Σ original → Σ final → Σ added → Σ shipped, срез по client/niche/n3/n4/месяц.
+CREATE MATERIALIZED VIEW IF NOT EXISTS effect_funnel AS
+    WITH bounds AS (
+        SELECT order_id, min(version_seq) AS first_seq, max(version_seq) AS last_seq
+        FROM order_line_versions GROUP BY order_id
+    ),
+    o AS (   -- исходная версия (O)
+        SELECT v.order_id, v.n3_id, v.n4_id, sum(v.qty) AS qty
+        FROM order_line_versions v JOIN bounds b
+          ON b.order_id = v.order_id AND v.version_seq = b.first_seq
+        GROUP BY v.order_id, v.n3_id, v.n4_id
+    ),
+    f AS (   -- финальная версия (F)
+        SELECT v.order_id, v.n3_id, v.n4_id, sum(v.qty) AS qty
+        FROM order_line_versions v JOIN bounds b
+          ON b.order_id = v.order_id AND v.version_seq = b.last_seq
+        GROUP BY v.order_id, v.n3_id, v.n4_id
+    ),
+    s AS (   -- отгружено по заказу+позиции (m2m по order_id)
+        SELECT order_id, n3_id, n4_id, sum(qty) AS qty
+        FROM shipment_lines GROUP BY order_id, n3_id, n4_id
+    ),
+    keys AS (
+        SELECT order_id, n3_id, n4_id FROM o
+        UNION SELECT order_id, n3_id, n4_id FROM f
+        UNION SELECT order_id, n3_id, n4_id FROM s
+    ),
+    dim AS (  -- измерения на заказ (из версий ∪ отгрузок)
+        SELECT order_id, max(client_id) AS client_id, max(niche) AS niche,
+               max(order_date) AS order_date
+        FROM (
+            SELECT order_id, client_id, niche, order_date FROM order_line_versions
+            UNION ALL
+            SELECT order_id, client_id, niche, shipment_date FROM shipment_lines
+        ) z GROUP BY order_id
+    )
+    SELECT k.order_id, k.n3_id, k.n4_id,
+           d.client_id, d.niche,
+           date_trunc('month', d.order_date)::date        AS period_month,
+           round(COALESCE(o.qty, 0), 3)                    AS qty_original,
+           round(COALESCE(f.qty, 0), 3)                    AS qty_final,
+           round(GREATEST(COALESCE(f.qty,0) - COALESCE(o.qty,0), 0), 3) AS qty_added,
+           round(COALESCE(s.qty, 0), 3)                    AS qty_shipped,
+           (COALESCE(o.qty,0) > 0)::int                    AS is_original,
+           (COALESCE(f.qty,0) > 0)::int                    AS is_final,
+           (COALESCE(o.qty,0) = 0 AND COALESCE(f.qty,0) > 0)::int AS is_added,
+           (COALESCE(s.qty,0) > 0)::int                    AS is_shipped
+    FROM keys k
+    LEFT JOIN o ON o.order_id=k.order_id AND o.n3_id=k.n3_id AND o.n4_id=k.n4_id
+    LEFT JOIN f ON f.order_id=k.order_id AND f.n3_id=k.n3_id AND f.n4_id=k.n4_id
+    LEFT JOIN s ON s.order_id=k.order_id AND s.n3_id=k.n3_id AND s.n4_id=k.n4_id
+    LEFT JOIN dim d ON d.order_id=k.order_id
+    WITH NO DATA;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_effect_funnel ON effect_funnel (order_id, n3_id, n4_id);
+CREATE INDEX IF NOT EXISTS ix_effect_funnel_slice ON effect_funnel (niche, period_month);

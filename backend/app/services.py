@@ -18,8 +18,9 @@ async def _resolve_n3(lines: list[dict]) -> list[dict]:
     return out
 
 
-async def analyze(client_id: str, lines: list[dict]) -> dict:
-    """Run both analyses for a client + the current (draft) order. Stateless."""
+async def analyze(client_id: str, lines: list[dict], order_id: str | None = None) -> dict:
+    """Run both analyses for a client + the current (draft) order. Выданные
+    рекомендации логируются в recommendation_log (сигнал «ассистент сработал»)."""
     order_lines = await _resolve_n3(lines)
 
     niche = await repo.get_client_niche(client_id)
@@ -34,6 +35,8 @@ async def analyze(client_id: str, lines: list[dict]) -> dict:
         # Множество N3, что клиент брал, = подгруппы его профиля (без доп. запроса).
         bought = {r["n3_id"] for r in client_profile}
         niche_recs = analyzer.analyze_niche(niche, niche_profile, bought, order_lines)
+
+    await repo.log_recommendations(client_id, order_id, forgotten, niche_recs)
 
     return {
         "client_id": client_id,

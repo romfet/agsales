@@ -21,4 +21,5 @@ async def analyze(payload: AnalyzeIn):
     return await services.analyze(
         payload.client_id,
         [l.model_dump() for l in payload.lines],
+        order_id=payload.order_id,
     )

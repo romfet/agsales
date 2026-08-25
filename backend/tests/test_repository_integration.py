@@ -157,3 +157,40 @@ async def test_ingest_accepts_datetime_string_date():
         sd = (await conn.execute(text("SELECT shipment_date FROM shipment_lines WHERE shipment_id='SH-DT'"))).scalar()
     assert od == _date(2026, 6, 15)
     assert sd == _date(2026, 6, 16)
+
+
+async def test_effect_funnel_diff_and_shipped():
+    """Ф4: витрина воронки — дифф версий (O→F) + отгрузки, GUID-keyed."""
+    def oline(n3, n4, qty):
+        return {"order_id": "EF-1", "order_num": "EF-1", "order_date": "2026-09-01",
+                "client_id": "cli-ef", "niche": "НишаEF", "n3_id": n3, "n4_id": n4, "qty": qty}
+
+    await repo.ingest_order_lines([oline("n3-a", "n4-a", 4)])                       # v1: A(4)
+    await repo.ingest_order_lines([oline("n3-a", "n4-a", 4), oline("n3-b", "n4-b", 2)])  # v2: +B(2)
+    await repo.ingest_shipment_lines([{                                             # отгружено A=3, B нет
+        "shipment_id": "EFS-1", "shipment_num": "EFS-1", "shipment_date": "2026-09-05",
+        "order_id": "EF-1", "client_id": "cli-ef", "niche": "НишаEF",
+        "n3_id": "n3-a", "n4_id": "n4-a", "qty": 3}])
+    await repo.refresh_aggregates()
+
+    async with engine.begin() as conn:
+        rows = {r.n3_id: r._mapping for r in (await conn.execute(text(
+            "SELECT n3_id, qty_original, qty_final, qty_added, qty_shipped, is_added, is_shipped "
+            "FROM effect_funnel WHERE order_id='EF-1'"))).all()}
+    a, b = rows["n3-a"], rows["n3-b"]
+    assert (float(a["qty_original"]), float(a["qty_final"]), float(a["qty_added"])) == (4.0, 4.0, 0.0)
+    assert float(a["qty_shipped"]) == 3.0 and a["is_shipped"] == 1 and a["is_added"] == 0
+    assert (float(b["qty_original"]), float(b["qty_final"]), float(b["qty_added"])) == (0.0, 2.0, 2.0)
+    assert float(b["qty_shipped"]) == 0.0 and b["is_added"] == 1 and b["is_shipped"] == 0
+
+
+async def test_recommendation_log_written_on_analyze():
+    """Ф4: /analyze пишет выданные рекомендации в recommendation_log с order_id."""
+    res = await services.analyze(KNOWN_CLIENT, lines=[{"n3_id": "zzz-absent", "qty": 1}],
+                                 order_id="ORD-LOG-1")
+    assert res["analysis1_forgotten"]                       # у mock-клиента есть рекомендации
+    async with engine.begin() as conn:
+        kinds = {r.kind: r.n for r in (await conn.execute(text(
+            "SELECT kind, count(*) AS n FROM recommendation_log WHERE order_id='ORD-LOG-1' GROUP BY kind"))).all()}
+    assert sum(kinds.values()) > 0
+    assert set(kinds) <= {"forgotten", "niche"}

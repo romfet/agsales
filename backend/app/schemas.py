@@ -84,6 +84,7 @@ class OrderLineIn(BaseModel):
 
 class AnalyzeIn(BaseModel):
     client_id: str
+    order_id: str | None = None   # заказ, по которому идёт анализ (для журнала рекомендаций)
     lines: list[OrderLineIn] = Field(default_factory=list)
 
 
