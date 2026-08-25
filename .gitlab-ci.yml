@@ -4,6 +4,9 @@
 #   AUTH_JWT_SECRET  — секрет подписи токенов (openssl rand -hex 32)
 #   AUTH_CLIENTS     — JSON клиентов, напр.
 #                      [{"client_id":"onec","client_secret":"…","scopes":["ingest","analyze"]}]
+#   NEXUS_REGISTRY   — хост docker-registry Nexus (nexus.rumsk01.keenetic.link)
+#   NEXUS_USER       — пользователь Nexus с правом push (gitlab)
+#   NEXUS_PASSWORD   — его пароль (masked+protected). Пусто → стадия publish пропускается.
 
 # docker-executor: образ с Docker CLI + compose; команды идут в хостовый Docker.
 default:
@@ -12,6 +15,7 @@ default:
 stages:
   - test
   - deploy
+  - publish
 
 # --- Тесты: эфемерный postgres + pytest в образе. Прод-стек НЕ трогаем. ---
 test:
@@ -58,6 +62,32 @@ deploy:
     - docker compose up -d --build
     - docker compose ps
     - docker compose exec -T db psql -U agsales -d agsales -c "\d order_lines" || true
+
+# --- Публикация образов в Nexus (после успешного деплоя main). ---
+# Перезаписывает текущие образы: agsales-backend:latest и postgres:16 (+ пин по SHA
+# для отката). Пропускается, если NEXUS_PASSWORD не задан. Требует у репозитория
+# docker-hosted политику «Allow redeploy» (перезапись тегов).
+publish:
+  stage: publish
+  tags: [docker]
+  needs: ["deploy"]
+  rules:
+    - if: '$INSPECT == "true"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == "main" && $NEXUS_PASSWORD != ""'
+  script:
+    - echo "$NEXUS_PASSWORD" | docker login "$NEXUS_REGISTRY" -u "$NEXUS_USER" --password-stdin
+    # бэк: сборку деплоя (agsales-backend:latest) — перезаписываем latest + пин по SHA
+    - docker tag agsales-backend:latest "$NEXUS_REGISTRY/agsales-backend:latest"
+    - docker tag agsales-backend:latest "$NEXUS_REGISTRY/agsales-backend:$CI_COMMIT_SHORT_SHA"
+    - docker push "$NEXUS_REGISTRY/agsales-backend:latest"
+    - docker push "$NEXUS_REGISTRY/agsales-backend:$CI_COMMIT_SHORT_SHA"
+    # БД: зеркалируем postgres:16 (локальный образ; тянем только если его нет)
+    - docker image inspect postgres:16 >/dev/null 2>&1 || docker pull postgres:16
+    - docker tag postgres:16 "$NEXUS_REGISTRY/postgres:16"
+    - docker push "$NEXUS_REGISTRY/postgres:16"
+  after_script:
+    - docker logout "$NEXUS_REGISTRY" || true
 
 # --- mini: только осмотр схемы живой БД (INSPECT=true), без test/deploy ---
 inspect:
