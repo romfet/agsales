@@ -11,7 +11,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import delete, insert, select, text
+from sqlalchemy import delete, func, insert, select, text
 
 from backend.app.db import tables as t
 from backend.app.db.session import engine
@@ -215,7 +215,9 @@ async def log_recommendations(
 # --- Analyze reads --------------------------------------------------------
 
 async def get_client_niche(client_id: str) -> str | None:
-    q = select(t.client_dim.c.niche).where(t.client_dim.c.client_id == client_id)
+    # Ниша из client_niche (мода по заказам ∪ отгрузкам): резолвится даже до появления
+    # отгрузок у клиента (иначе анализ по нише молча отключался бы).
+    q = select(t.client_niche.c.niche).where(t.client_niche.c.client_id == client_id)
     async with engine.connect() as conn:
         return (await conn.execute(q)).scalar_one_or_none()
 
@@ -297,6 +299,92 @@ async def get_order_diff(order_id: str) -> list[dict]:
                     "qty_first": qf, "qty_last": ql,
                     "delta": round(ql - qf, 3), "status": status})
     return out
+
+
+# --- BI reads (витрина эффекта + журнал рекомендаций) ---------------------
+
+_FUNNEL_COLS = (
+    "order_id", "n3_id", "client_id", "niche", "period_month",
+    "qty_original", "qty_final", "qty_added", "qty_shipped",
+    "is_original", "is_final", "is_new_position", "is_qty_increased", "is_shipped",
+)
+
+
+def _row_to_funnel(r) -> dict:
+    d = r._mapping
+    out = {c: d[c] for c in _FUNNEL_COLS}
+    out["period_month"] = out["period_month"].isoformat() if out["period_month"] else None
+    for q in ("qty_original", "qty_final", "qty_added", "qty_shipped"):
+        out[q] = _f(out[q])
+    return out
+
+
+async def get_effect_funnel(
+    niche: str | None = None,
+    period_from: date | None = None,
+    period_to: date | None = None,
+    limit: int = 1000,
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """Строки витрины эффекта (грейн order_id × n3_id) для выгрузки в BI, с
+    пагинацией и необязательными фильтрами по нише/периоду. Возвращает (строки, всего)."""
+    ef = t.effect_funnel
+    conds = []
+    if niche:
+        conds.append(ef.c.niche == niche)
+    if period_from:
+        conds.append(ef.c.period_month >= period_from)
+    if period_to:
+        conds.append(ef.c.period_month <= period_to)
+    q = select(ef)
+    cq = select(func.count()).select_from(ef)
+    for c in conds:
+        q = q.where(c)
+        cq = cq.where(c)
+    q = q.order_by(ef.c.order_id, ef.c.n3_id).limit(limit).offset(offset)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(q)).all()
+        total = int(await conn.scalar(cq))
+    return [_row_to_funnel(r) for r in rows], total
+
+
+def _row_to_reclog(r) -> dict:
+    return {
+        "id": int(r.id),
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "client_id": r.client_id,
+        "order_id": r.order_id,
+        "kind": r.kind,
+        "n3_id": r.n3_id,
+        "n4_id": r.n4_id,
+        "priority": r.priority,
+    }
+
+
+async def get_recommendation_log(
+    since_id: int | None = None,
+    kind: str | None = None,
+    limit: int = 1000,
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """Журнал выданных рекомендаций для BI (append-only). ``since_id`` — инкрементная
+    выгрузка (строки с id больше указанного). Возвращает (строки, всего по фильтру)."""
+    rl = t.recommendation_log
+    conds = []
+    if since_id is not None:
+        conds.append(rl.c.id > since_id)
+    if kind:
+        conds.append(rl.c.kind == kind)
+    q = select(rl)
+    cq = select(func.count()).select_from(rl)
+    for c in conds:
+        q = q.where(c)
+        cq = cq.where(c)
+    q = q.order_by(rl.c.id).limit(limit).offset(offset)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(q)).all()
+        total = int(await conn.scalar(cq))
+    return [_row_to_reclog(r) for r in rows], total
 
 
 # --- Aggregates -----------------------------------------------------------

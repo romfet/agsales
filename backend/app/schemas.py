@@ -121,3 +121,48 @@ class AnalyzeOut(BaseModel):
     niche: str | None = None
     analysis1_forgotten: list[ForgottenItem]
     analysis2_niche: list[NicheItem]
+
+
+# --- Effect витрина (us → BI; read) ---
+class EffectFunnelRow(BaseModel):
+    """Строка витрины эффекта (грейн order_id × n3_id). Только GUID + меры."""
+
+    order_id: str
+    n3_id: str
+    client_id: str | None = None
+    niche: str | None = None
+    period_month: str | None = None       # YYYY-MM-01 (месяц заказа)
+    qty_original: float
+    qty_final: float
+    qty_added: float
+    qty_shipped: float
+    is_original: int
+    is_final: int
+    is_new_position: int
+    is_qty_increased: int
+    is_shipped: int
+
+
+class EffectFunnelPage(BaseModel):
+    items: list[EffectFunnelRow]
+    limit: int
+    offset: int
+    count: int                            # всего строк по фильтру (для пагинации)
+
+
+class RecommendationLogRow(BaseModel):
+    id: int
+    created_at: str | None = None
+    client_id: str
+    order_id: str | None = None
+    kind: str                             # 'forgotten' | 'niche'
+    n3_id: str
+    n4_id: str | None = None
+    priority: str | None = None
+
+
+class RecommendationLogPage(BaseModel):
+    items: list[RecommendationLogRow]
+    limit: int
+    offset: int
+    count: int

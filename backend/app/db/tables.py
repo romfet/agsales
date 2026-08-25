@@ -138,11 +138,40 @@ niche_profile_n3 = Table(
     Column("avg_qty_per_client", Numeric),
 )
 
+# Ниша клиента (мода) из заказов ∪ отгрузок — резолв ниши, работает и до отгрузок.
+client_niche = Table(
+    "client_niche",
+    metadata,
+    Column("client_id", Text, primary_key=True),
+    Column("niche", Text),
+)
+
+# Витрина воронки эффекта (v2, грейн order_id × n3_id) — для выгрузки в BI.
+effect_funnel = Table(
+    "effect_funnel",
+    metadata,
+    Column("order_id", Text),
+    Column("n3_id", Text),
+    Column("client_id", Text),
+    Column("niche", Text),
+    Column("period_month", Date),
+    Column("qty_original", Numeric),
+    Column("qty_final", Numeric),
+    Column("qty_added", Numeric),
+    Column("qty_shipped", Numeric),
+    Column("is_original", Integer),
+    Column("is_final", Integer),
+    Column("is_new_position", Integer),
+    Column("is_qty_increased", Integer),
+    Column("is_shipped", Integer),
+)
+
 # Refresh order respects matview dependencies (dims before profiles).
 MATERIALIZED_VIEWS = [
     "client_dim",
     "niche_dim",
     "products",
+    "client_niche",
     "client_profile_n3",
     "niche_profile_n3",
     "effect_funnel",

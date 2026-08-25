@@ -4,8 +4,8 @@
 Тела — JSON UTF-8. **Идентичность по GUID:** `order_id`, `shipment_id`, `client_id`,
 `niche` (Отрасль — тоже GUID), `n3_id`, `n4_id` (наименований товара/подгруппы нет —
 1С резолвит их у себя). `order_num`/`shipment_num` — человекочитаемые номера
-(отображение). Во всех `/api/ingest/*` и `/api/analyze` — заголовок
-`Authorization: Bearer <access_token>`.
+(отображение). Во всех `/api/ingest/*`, `/api/analyze` и `/api/effect/*` — заголовок
+`Authorization: Bearer <access_token>` (право: `ingest` / `analyze` / `effect`).
 
 | # | Метод | Путь | Право (scope) |
 |---|---|---|---|
@@ -14,7 +14,9 @@
 | 3 | POST | `/api/ingest/shipments` | `ingest` |
 | 4 | POST | `/api/ingest/commit` | `ingest` |
 | 5 | POST | `/api/analyze` | `analyze` |
-| 6 | GET  | `/health` | — |
+| 6 | GET  | `/api/effect/funnel` | `effect` |
+| 7 | GET  | `/api/effect/recommendations` | `effect` |
+| 8 | GET  | `/health` | — |
 
 ---
 
@@ -159,7 +161,45 @@
 `analysis2_niche[]`: `n3_id`, `n4_id`, `niche`, `niche_pct`, `client_count`/`total_clients`,
 `order_count`/`total_orders`, `frequency_pct`, `client_bought_before`, `avg_qty_per_client`, `priority`.
 
-## 6. GET /health → `{ "status": "ok" }`
+## 6. GET /api/effect/funnel — витрина эффекта для BI
+Read-only выгрузка витрины воронки (`effect_funnel`, грейн `order_id × n3_id`).
+Право `effect`. Пагинация `limit` (1..10000, деф. 1000) / `offset`. Только GUID +
+меры — наименования BI резолвит из справочников 1С.
+
+Query: `niche` (GUID отрасли), `period_from` / `period_to` (`YYYY-MM-DD`, месяц заказа), `limit`, `offset`.
+```json
+{
+  "items": [
+    { "order_id": "a1b2c3d4-...", "n3_id": "d24d39bd-...",
+      "client_id": "c0ffee00-...", "niche": "f928c3fd-...", "period_month": "2026-08-01",
+      "qty_original": 10.0, "qty_final": 12.0, "qty_added": 2.0, "qty_shipped": 8.0,
+      "is_original": 1, "is_final": 1, "is_new_position": 0, "is_qty_increased": 1, "is_shipped": 1 }
+  ],
+  "limit": 1000, "offset": 0, "count": 1
+}
+```
+Меры на `(order_id, n3)`: `qty_original`/`qty_final` — исходный/финальный тоннаж
+подгруппы; `qty_added = max(final−original,0)` — прирост (вкл. рост); `qty_shipped`
+— отгружено. Флаги (0/1): `is_new_position` (подгруппы не было → появилась),
+`is_qty_increased` (была и выросла), `is_shipped`. `count` — всего строк по фильтру.
+
+## 7. GET /api/effect/recommendations — журнал выданных рекомендаций для BI
+Read-only выгрузка `recommendation_log` (append-only). Право `effect`. Query:
+`since_id` (инкрементально — id больше указанного), `kind` (`forgotten`|`niche`),
+`limit`, `offset`.
+```json
+{
+  "items": [
+    { "id": 42, "created_at": "2026-08-18T10:15:00+00:00", "client_id": "c0ffee00-...",
+      "order_id": "a1b2c3d4-...", "kind": "forgotten", "n3_id": "d24d39bd-...",
+      "n4_id": "8917a4a0-...", "priority": "high" }
+  ],
+  "limit": 1000, "offset": 0, "count": 1
+}
+```
+BI связывает журнал с витриной по `(order_id, n3_id)` для атрибуции эффекта.
+
+## 8. GET /health → `{ "status": "ok" }`
 
 ---
 

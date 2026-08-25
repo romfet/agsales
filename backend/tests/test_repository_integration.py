@@ -162,13 +162,16 @@ async def test_ingest_accepts_datetime_string_date():
 
 
 async def test_effect_funnel_diff_and_shipped():
-    """Ф4: витрина воронки — дифф версий (O→F) + отгрузки, GUID-keyed."""
+    """Витрина воронки (грейн N3): дифф версий (O→F) + отгрузки, флаги позиции.
+    A растёт 4→5 (is_qty_increased), B новая 0→2 (is_new_position)."""
+    from datetime import date as _date
+
     def oline(n3, n4, qty):
         return {"order_id": "EF-1", "order_num": "EF-1", "order_date": "2026-09-01",
                 "client_id": "cli-ef", "niche": "НишаEF", "n3_id": n3, "n4_id": n4, "qty": qty}
 
     await repo.ingest_order_lines([oline("n3-a", "n4-a", 4)])                       # v1: A(4)
-    await repo.ingest_order_lines([oline("n3-a", "n4-a", 4), oline("n3-b", "n4-b", 2)])  # v2: +B(2)
+    await repo.ingest_order_lines([oline("n3-a", "n4-a", 5), oline("n3-b", "n4-b", 2)])  # v2: A(5)+B(2)
     await repo.ingest_shipment_lines([{                                             # отгружено A=3, B нет
         "shipment_id": "EFS-1", "shipment_num": "EFS-1", "shipment_date": "2026-09-05",
         "order_id": "EF-1", "client_id": "cli-ef", "niche": "НишаEF",
@@ -177,13 +180,33 @@ async def test_effect_funnel_diff_and_shipped():
 
     async with engine.begin() as conn:
         rows = {r.n3_id: r._mapping for r in (await conn.execute(text(
-            "SELECT n3_id, qty_original, qty_final, qty_added, qty_shipped, is_added, is_shipped "
+            "SELECT n3_id, qty_original, qty_final, qty_added, qty_shipped, "
+            "is_new_position, is_qty_increased, is_shipped, period_month "
             "FROM effect_funnel WHERE order_id='EF-1'"))).all()}
     a, b = rows["n3-a"], rows["n3-b"]
-    assert (float(a["qty_original"]), float(a["qty_final"]), float(a["qty_added"])) == (4.0, 4.0, 0.0)
-    assert float(a["qty_shipped"]) == 3.0 and a["is_shipped"] == 1 and a["is_added"] == 0
+    # A: рост 4→5, отгружено 3
+    assert (float(a["qty_original"]), float(a["qty_final"]), float(a["qty_added"])) == (4.0, 5.0, 1.0)
+    assert float(a["qty_shipped"]) == 3.0 and a["is_shipped"] == 1
+    assert a["is_new_position"] == 0 and a["is_qty_increased"] == 1
+    assert a["period_month"] == _date(2026, 9, 1)          # месяц ЗАКАЗА, не отгрузки
+    # B: новая позиция 0→2, не отгружена
     assert (float(b["qty_original"]), float(b["qty_final"]), float(b["qty_added"])) == (0.0, 2.0, 2.0)
-    assert float(b["qty_shipped"]) == 0.0 and b["is_added"] == 1 and b["is_shipped"] == 0
+    assert float(b["qty_shipped"]) == 0.0 and b["is_shipped"] == 0
+    assert b["is_new_position"] == 1 and b["is_qty_increased"] == 0
+
+
+async def test_effect_funnel_and_reclog_bi_reads():
+    """BI-выгрузка: get_effect_funnel и get_recommendation_log отдают строки + total."""
+    items, total = await repo.get_effect_funnel(limit=5, offset=0)
+    assert total >= 1 and len(items) <= 5
+    row = items[0]
+    assert {"order_id", "n3_id", "qty_original", "qty_final",
+            "qty_added", "qty_shipped", "is_new_position"} <= set(row)
+
+    logs, ltotal = await repo.get_recommendation_log(limit=5)
+    assert ltotal >= 0
+    if logs:
+        assert {"id", "kind", "n3_id", "client_id"} <= set(logs[0])
 
 
 async def test_recommendation_log_written_on_analyze():
