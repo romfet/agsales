@@ -1,6 +1,6 @@
-# Unified stack for the refactored service: Postgres + migrate/seed + FastAPI + worker.
+# Unified stack: Postgres + migrate + FastAPI + worker.
 # Two-endpoint service: POST /api/ingest/* (1С push) and POST /api/analyze.
-# (Legacy Flask MVP lives in docker-compose.legacy.yml until cutover.)
+# Секреты — только из .env (см. .env.example), в этом файле их нет.
 #
 #   docker compose up -d --build        # API + docs at http://localhost:5050/docs
 #
@@ -13,15 +13,15 @@ services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_USER: agsales
-      POSTGRES_PASSWORD: agsales
-      POSTGRES_DB: agsales
+      POSTGRES_USER: ${POSTGRES_USER:-agsales}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — see .env.example}
+      POSTGRES_DB: ${POSTGRES_DB:-agsales}
     # БД доступна только внутри сети compose (db:5432); на хост не пробрасываем.
     # Для локальной отладки можно временно добавить: ports: ["127.0.0.1:5433:5432"].
     volumes:
       - agsales_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agsales"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agsales}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -33,7 +33,7 @@ services:
     image: agsales-backend
     command: python -m backend.db.migrate
     environment:
-      DATABASE_URL: postgresql+psycopg://agsales:agsales@db:5432/agsales
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-agsales}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agsales}
     depends_on:
       db:
         condition: service_healthy
@@ -45,7 +45,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     environment:
-      DATABASE_URL: postgresql+psycopg://agsales:agsales@db:5432/agsales
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-agsales}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agsales}
       # Из .env (рядом с docker-compose.yml). ПУСТО = авторизация открыта (только локально!).
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
       AUTH_CLIENTS: ${AUTH_CLIENTS:-[]}
@@ -63,7 +63,7 @@ services:
       dockerfile: backend/Dockerfile
     command: python -m backend.sync.worker
     environment:
-      DATABASE_URL: postgresql+psycopg://agsales:agsales@db:5432/agsales
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-agsales}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agsales}
       REFRESH_INTERVAL_MINUTES: "10"
     depends_on:
       migrate:

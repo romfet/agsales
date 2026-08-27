@@ -85,11 +85,3 @@ python -m backend.db.migrate
 pytest -c backend/pytest.ini -m integration
 ```
 
-## What replaces what
-
-| Old (repo-root MVP) | New |
-|---|---|
-| `data_store.py` (pandas globals)        | `app/repository.py` (async SQLAlchemy Core) + materialized views |
-| `analyzer.py`                           | `app/domain/analyzer.py` (pure) + `app/services.py` (orchestration) |
-| `load_excel` / `column_mapper` / `/upload*` | `sync/` (mock now; 1С push to `/api/ingest/*` in prod) |
-| stock match by N4 name                  | (dropped — no stock in the current contract) |

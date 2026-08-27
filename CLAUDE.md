@@ -6,12 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Russian-language sales-analytics service for metal-rolling (металлопрокат) managers. Given a client's order history and the current draft order, it returns two kinds of cross-sell recommendations: (1) **forgotten** products this client usually buys but is missing or under-ordering now, and (2) **niche** products that similar clients in the same отрасль buy. All domain text (ниши, priorities, error messages) is Russian.
 
-The repo is **mid-rewrite**. Two apps coexist:
-
-- **`backend/`** — the active service: a FastAPI + PostgreSQL, GUID-keyed, 1С-push-integration rewrite. **All new work goes here.**
-- **repo root** (`app.py`, `data_store.py`, `analyzer.py`, `column_mapper.py`, `ai_chat.py`, `templates/`, `static/`) — the **legacy** Flask/pandas MVP (Excel upload, in-memory globals, AI chat). Kept running via `docker-compose.legacy.yml` until cutover. Don't build new features on it; see the "What replaces what" table in `backend/README.md`.
-
-The rest of this file describes the **`backend/` service** unless it says "legacy".
+The service is **`backend/`** — a FastAPI + PostgreSQL, GUID-keyed, 1С-push-integration app. All work goes here. (The legacy Flask/pandas MVP that used to live at the repo root has been removed.)
 
 ## Running
 
@@ -25,11 +20,11 @@ This starts four services: `db` (Postgres 16, **not** published to the host), `m
 
 - `docker compose down -v` wipes the DB volume. **Avoid it on the stand** — real 1С data must survive. Schema changes ship as **incremental migrations** (see below), not by recreating the volume.
 - For local dev with synthetic data, run `python -m backend.sync.seed_mock` manually (`sync/mock_source.py`; `KNOWN_CLIENT = clnt0000-…-000000000000` is mock client #1, deterministic, `seed=42`). Integration tests seed it themselves.
-- Legacy MVP: `docker compose -f docker-compose.legacy.yml up --build` (serves the old Flask app on 5050; needs `.env` with `OPENROUTER_API_KEY`).
+- Postgres-only for host-run dev: `docker compose up -d db` (add a `ports:` mapping to the `db` service if you need it published to the host).
 
 ### Env
 
-Copy `backend/.env.example`. Key settings (`backend/app/core/config.py`): `DATABASE_URL`, `AUTH_JWT_SECRET` (**empty = auth OPEN, dev only**), `AUTH_CLIENTS` (JSON list of `{client_id, client_secret, scopes}`), `REFRESH_INTERVAL_MINUTES`.
+Copy `.env.example` → `.env` (root, gitignored) for the Docker stack; `backend/.env.example` → `backend/.env` for host-run dev. **All secrets live in `.env`, never in the compose files.** Keys: `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` (compose builds `DATABASE_URL` from them), `AUTH_JWT_SECRET` (**empty = auth OPEN, dev only**), `AUTH_CLIENTS` (JSON list of `{client_id, client_secret, scopes}`), `REFRESH_INTERVAL_MINUTES`. On the stand the deploy job writes `.env` from CI/CD Variables (`POSTGRES_PASSWORD`, `AUTH_JWT_SECRET`, `AUTH_CLIENTS`). App settings map is `backend/app/core/config.py`.
 
 ### Tests
 
