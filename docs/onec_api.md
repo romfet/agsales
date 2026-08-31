@@ -137,6 +137,7 @@
 {
   "client_id": "c0ffee00-...-475e",
   "niche": "f928c3fd-e211-11ef-a380-3448edf7a2ad",
+  "client_summary": { "shipped_qty": 200.0, "last_shipment_date": "2026-05-13", "orders_in_history": 4 },
   "analysis1_forgotten": [
     { "type": "missing", "n3_id": "...", "n4_id": "...",
       "order_count": 8, "total_orders": 20, "shipped_qty": 96.5, "frequency_pct": 40.0,
@@ -150,6 +151,11 @@
   ]
 }
 ```
+
+**`client_summary`** — сводка по клиенту для шапки формы: `shipped_qty` — **суммарная
+отгрузка клиента за период (последние 12 мес, тонны)** («Отгрузка за период»),
+`last_shipment_date` — дата последней отгрузки (`YYYY-MM-DD`), `orders_in_history` —
+число заказов (отгрузок) клиента в истории.
 
 **Поля рекомендаций** (товар/подгруппа — только GUID; имена 1С подставляет сама).
 Примечание: счётчики `order_count`/`total_orders` считаются по **отгрузкам**

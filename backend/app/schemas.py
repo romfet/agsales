@@ -118,9 +118,18 @@ class NicheItem(BaseModel):
     priority: str
 
 
+class ClientSummary(BaseModel):
+    """Сводка по клиенту для шапки формы 1С."""
+
+    shipped_qty: float = 0.0              # Отгрузка за период (12 мес), тн — суммарно по клиенту
+    last_shipment_date: str | None = None  # Дата последней отгрузки (YYYY-MM-DD)
+    orders_in_history: int = 0           # Заказов (отгрузок) в истории
+
+
 class AnalyzeOut(BaseModel):
     client_id: str
     niche: str | None = None
+    client_summary: ClientSummary
     analysis1_forgotten: list[ForgottenItem]
     analysis2_niche: list[NicheItem]
 

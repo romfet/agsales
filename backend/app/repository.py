@@ -224,6 +224,28 @@ async def get_client_niche(client_id: str) -> str | None:
         return (await conn.execute(q)).scalar_one_or_none()
 
 
+async def get_client_summary(client_id: str) -> dict:
+    """Клиентская сводка для шапки формы 1С: суммарная отгрузка за период (тонны,
+    последние 12 мес), дата последней отгрузки, число заказов (отгрузок) в истории."""
+    sql = text(
+        """
+        SELECT
+            COALESCE(sum(qty) FILTER (
+                WHERE shipment_date >= CURRENT_DATE - INTERVAL '1 year'), 0) AS shipped_qty,
+            max(shipment_date)          AS last_shipment_date,
+            count(DISTINCT shipment_id) AS orders_in_history
+        FROM shipment_lines WHERE client_id = :cid
+        """
+    )
+    async with engine.connect() as conn:
+        r = (await conn.execute(sql, {"cid": client_id})).one()
+    return {
+        "shipped_qty": round(float(r.shipped_qty or 0), 3),
+        "last_shipment_date": r.last_shipment_date.isoformat() if r.last_shipment_date else None,
+        "orders_in_history": int(r.orders_in_history or 0),
+    }
+
+
 async def get_n3_for_n4(n4_ids: list[str]) -> dict[str, str]:
     """Resolve n4_id → n3_id from the synced catalog (analyzer matches at N3)."""
     if not n4_ids:

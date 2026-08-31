@@ -23,6 +23,7 @@ async def analyze(client_id: str, lines: list[dict], order_id: str | None = None
     рекомендации логируются в recommendation_log (сигнал «ассистент сработал»)."""
     order_lines = await _resolve_n3(lines)
 
+    summary = await repo.get_client_summary(client_id)   # шапка формы 1С
     niche = await repo.get_client_niche(client_id)
 
     # Профили на уровне N3 (одна строка на подгруппу) — анализ идёт по N3.
@@ -41,6 +42,7 @@ async def analyze(client_id: str, lines: list[dict], order_id: str | None = None
     return {
         "client_id": client_id,
         "niche": niche,
+        "client_summary": summary,
         "analysis1_forgotten": forgotten,
         "analysis2_niche": niche_recs,
     }

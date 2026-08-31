@@ -24,14 +24,19 @@ async def test_analyze_is_n3_grain_and_deduped(monkeypatch):
     async def niche_profile(_): return [_np_n3("n3-Z", "n4-Z1", niche_pct=90.0)]
     async def n3_for_n4(_ids): return {}
     async def log_rec(*a, **k): return None
+    async def summary(_): return {"shipped_qty": 200.0, "last_shipment_date": "2026-05-13", "orders_in_history": 4}
 
     monkeypatch.setattr(repo, "get_client_profile_n3", client_profile)
     monkeypatch.setattr(repo, "get_client_niche", niche)
     monkeypatch.setattr(repo, "get_niche_profile_n3", niche_profile)
     monkeypatch.setattr(repo, "get_n3_for_n4", n3_for_n4)
     monkeypatch.setattr(repo, "log_recommendations", log_rec)
+    monkeypatch.setattr(repo, "get_client_summary", summary)
 
     res = await services.analyze("cli", lines=[])
+
+    assert res["client_summary"]["shipped_qty"] == 200.0        # Отгрузка за период
+    assert res["client_summary"]["orders_in_history"] == 4
 
     forgotten = res["analysis1_forgotten"]
     assert [r["n3_id"] for r in forgotten] == ["n3-A"]
