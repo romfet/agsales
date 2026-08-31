@@ -139,13 +139,13 @@
   "niche": "f928c3fd-e211-11ef-a380-3448edf7a2ad",
   "analysis1_forgotten": [
     { "type": "missing", "n3_id": "...", "n4_id": "...",
-      "order_count": 8, "total_orders": 20, "frequency_pct": 40.0,
+      "order_count": 8, "total_orders": 20, "shipped_qty": 96.5, "frequency_pct": 40.0,
       "avg_qty": 12.5, "current_qty": null, "priority": "high" }
   ],
   "analysis2_niche": [
     { "n3_id": "...", "n4_id": "...", "niche": "f928c3fd-...",
       "niche_pct": 35.0, "client_count": 18, "total_clients": 51,
-      "order_count": 120, "total_orders": 940, "frequency_pct": 12.8,
+      "order_count": 120, "total_orders": 940, "shipped_qty": 1680.0, "frequency_pct": 12.8,
       "client_bought_before": false, "avg_qty_per_client": 9.3, "priority": "high" }
   ]
 }
@@ -156,10 +156,14 @@
 (имена полей сохранены для совместимости контракта).
 
 `analysis1_forgotten[]`: `type` (`missing`|`low_quantity`), `n3_id`, `n4_id`,
-`order_count`/`total_orders`, `frequency_pct`, `avg_qty`, `current_qty`, `priority` (`high`|`medium`).
+`order_count`/`total_orders`, **`shipped_qty`**, `frequency_pct`, `avg_qty`, `current_qty`, `priority` (`high`|`medium`).
 
 `analysis2_niche[]`: `n3_id`, `n4_id`, `niche`, `niche_pct`, `client_count`/`total_clients`,
-`order_count`/`total_orders`, `frequency_pct`, `client_bought_before`, `avg_qty_per_client`, `priority`.
+`order_count`/`total_orders`, **`shipped_qty`**, `frequency_pct`, `client_bought_before`, `avg_qty_per_client`, `priority`.
+
+**`shipped_qty`** — суммарно **отгружено тонн по этой подгруппе (из РТУ / истории
+отгрузок)**: в `analysis1_forgotten` — по данному клиенту, в `analysis2_niche` — по
+всей отрасли. Рядом с `total_orders`.
 
 ## 6. GET /api/effect/funnel — витрина эффекта для BI
 Read-only выгрузка витрины воронки (`effect_funnel`, грейн `order_id × n3_id`).

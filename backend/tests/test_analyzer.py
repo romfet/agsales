@@ -2,18 +2,20 @@
 from backend.app.domain import analyzer
 
 
-def _cp(n3_id, n4_id, freq, avg, oc=5, to=20):
+def _cp(n3_id, n4_id, freq, avg, oc=5, to=20, tq=123.456):
     return {
         "n3_id": n3_id, "n4_id": n4_id,
         "order_count": oc, "total_orders": to,
         "frequency_pct": freq, "avg_qty_per_order": avg,
+        "total_qty": tq,
     }
 
 
 def test_forgotten_flags_missing_frequent_product():
-    recs = analyzer.analyze_forgotten([_cp("n3-arm", "n4-12", freq=40, avg=10)], order_lines=[])
+    recs = analyzer.analyze_forgotten([_cp("n3-arm", "n4-12", freq=40, avg=10, tq=42.5)], order_lines=[])
     assert len(recs) == 1
     assert recs[0]["type"] == "missing" and recs[0]["priority"] == "high"
+    assert recs[0]["shipped_qty"] == 42.5        # Σ отгружено тонн по РТУ
 
 
 def test_forgotten_ignores_below_threshold():
@@ -40,19 +42,21 @@ def test_forgotten_sorted_and_capped_at_top_n():
     assert freqs == sorted(freqs, reverse=True)
 
 
-def _np(n3_id, n4_id, niche_pct, freq, cc=4, tc=10, oc=8, to=50, avg=3):
+def _np(n3_id, n4_id, niche_pct, freq, cc=4, tc=10, oc=8, to=50, avg=3, tq=987.654):
     return {
         "n3_id": n3_id, "n4_id": n4_id,
         "client_count": cc, "total_clients_in_niche": tc,
         "order_count": oc, "total_orders_in_niche": to,
         "niche_pct": niche_pct, "niche_freq_pct": freq, "avg_qty_per_client": avg,
+        "total_qty": tq,
     }
 
 
 def test_niche_recommends_absent_popular_product():
-    recs = analyzer.analyze_niche("Строительство", [_np("n3-tr", "n4-9", niche_pct=12, freq=20)], set(), order_lines=[])
+    recs = analyzer.analyze_niche("Строительство", [_np("n3-tr", "n4-9", niche_pct=12, freq=20, tq=77.0)], set(), order_lines=[])
     assert len(recs) == 1
     assert recs[0]["priority"] == "high" and recs[0]["client_bought_before"] is False
+    assert recs[0]["shipped_qty"] == 77.0        # Σ отгружено тонн в нише по РТУ
 
 
 def test_niche_marks_client_bought_before():

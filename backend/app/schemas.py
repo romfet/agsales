@@ -95,6 +95,7 @@ class ForgottenItem(BaseModel):
     n4_id: str | None = None
     order_count: int
     total_orders: int
+    shipped_qty: float = 0.0        # Σ отгружено тонн клиентом по подгруппе (из РТУ)
     frequency_pct: float
     avg_qty: float
     current_qty: float | None = None
@@ -110,6 +111,7 @@ class NicheItem(BaseModel):
     total_clients: int
     order_count: int
     total_orders: int
+    shipped_qty: float = 0.0        # Σ отгружено тонн в нише по подгруппе (из РТУ)
     frequency_pct: float
     client_bought_before: bool
     avg_qty_per_client: float

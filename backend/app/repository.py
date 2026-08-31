@@ -34,6 +34,7 @@ def _row_to_client_profile_n3(r) -> dict:
         "total_orders": int(r.total_orders),
         "frequency_pct": _f(r.frequency_pct),
         "avg_qty_per_order": _f(r.avg_qty_per_order),
+        "total_qty": _f(r.total_qty),           # Σ отгружено тонн (из РТУ)
     }
 
 
@@ -48,6 +49,7 @@ def _row_to_niche_profile_n3(r) -> dict:
         "niche_pct": _f(r.niche_pct),
         "niche_freq_pct": _f(r.niche_freq_pct),
         "avg_qty_per_client": _f(r.avg_qty_per_client),
+        "total_qty": _f(r.total_qty),           # Σ отгружено тонн в нише (из РТУ)
     }
 
 
