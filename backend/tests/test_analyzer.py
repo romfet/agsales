@@ -7,7 +7,7 @@ def _cp(n3_id, n4_id, freq, avg, oc=5, to=20, tq=123.456):
         "n3_id": n3_id, "n4_id": n4_id,
         "order_count": oc, "total_orders": to,
         "frequency_pct": freq, "avg_qty_per_order": avg,
-        "total_qty": tq,
+        "total_qty_12m": tq,
     }
 
 
@@ -48,7 +48,7 @@ def _np(n3_id, n4_id, niche_pct, freq, cc=4, tc=10, oc=8, to=50, avg=3, tq=987.6
         "client_count": cc, "total_clients_in_niche": tc,
         "order_count": oc, "total_orders_in_niche": to,
         "niche_pct": niche_pct, "niche_freq_pct": freq, "avg_qty_per_client": avg,
-        "total_qty": tq,
+        "total_qty_12m": tq,
     }
 
 

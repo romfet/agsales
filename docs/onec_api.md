@@ -161,9 +161,9 @@
 `analysis2_niche[]`: `n3_id`, `n4_id`, `niche`, `niche_pct`, `client_count`/`total_clients`,
 `order_count`/`total_orders`, **`shipped_qty`**, `frequency_pct`, `client_bought_before`, `avg_qty_per_client`, `priority`.
 
-**`shipped_qty`** — суммарно **отгружено тонн по этой подгруппе (из РТУ / истории
-отгрузок)**: в `analysis1_forgotten` — по данному клиенту, в `analysis2_niche` — по
-всей отрасли. Рядом с `total_orders`.
+**`shipped_qty`** — **отгружено тонн по этой подгруппе за последние 12 месяцев (из
+РТУ)**: в `analysis1_forgotten` — по данному клиенту, в `analysis2_niche` — по всей
+отрасли. Рядом с `total_orders`. Окно скользящее (от даты пересборки аналитики).
 
 ## 6. GET /api/effect/funnel — витрина эффекта для BI
 Read-only выгрузка витрины воронки (`effect_funnel`, грейн `order_id × n3_id`).
