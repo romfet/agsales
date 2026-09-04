@@ -47,8 +47,10 @@ services:
       # Из .env. ПУСТО = авторизация открыта (только для изолированной отладки!).
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
       AUTH_CLIENTS: ${AUTH_CLIENTS:-[]}
+    # Порт наружу (доступ по <host>:5050). Для localhost-only верни "127.0.0.1:5050:5050".
+    # Голый HTTP — bearer-токены идут открыто; для внешнего доступа ставь TLS/nginx впереди.
     ports:
-      - "127.0.0.1:5050:5050"
+      - "5050:5050"
     depends_on:
       migrate:
         condition: service_completed_successfully
