@@ -59,7 +59,7 @@ services:
     command: python -m backend.sync.worker
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-agsales}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agsales}
-      REFRESH_INTERVAL_MINUTES: "10"
+      REFRESH_INTERVAL_MINUTES: ${REFRESH_INTERVAL_MINUTES:-10}
     depends_on:
       migrate:
         condition: service_completed_successfully
