@@ -97,6 +97,7 @@ publish:
     # .env — отсюда. Репозиторий создаётся best-effort (нужны admin-права у $NEXUS_USER;
     # нет прав → создание молча пропускается, а заливка упадёт с понятной 404 — тогда
     # создать raw-hosted репозиторий $RAW в UI Nexus один раз вручную).
+    - apk add --no-cache curl >/dev/null   # в образе docker:27 curl нет
     - RAW="${NEXUS_RAW_REPO:-agsales-raw}"; BASE="https://$NEXUS_REGISTRY"
     - >
       curl -s -o /dev/null -w 'create %{http_code}\n' -u "$NEXUS_USER:$NEXUS_PASSWORD"
