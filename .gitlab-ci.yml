@@ -9,6 +9,7 @@
 #   NEXUS_REGISTRY   — хост docker-registry Nexus (nexus.rumsk01.keenetic.link)
 #   NEXUS_USER       — пользователь Nexus с правом push (gitlab)
 #   NEXUS_PASSWORD   — его пароль (masked+protected). Пусто → стадия publish пропускается.
+#   NEXUS_RAW_REPO   — имя raw-hosted репозитория для deploy-раздатки (деф. agsales-raw).
 
 # docker-executor: образ с Docker CLI + compose; команды идут в хостовый Docker.
 default:
@@ -91,6 +92,19 @@ publish:
     - docker image inspect postgres:16 >/dev/null 2>&1 || docker pull postgres:16
     - docker tag postgres:16 "$NEXUS_REGISTRY/postgres:16"
     - docker push "$NEXUS_REGISTRY/postgres:16"
+    # --- deploy-раздатка: compose + .env.example в raw-hosted репозиторий Nexus ---
+    # Образы тянутся из docker-hosted, а docker-compose.deploy.yml (без build) и шаблон
+    # .env — отсюда. Репозиторий создаётся best-effort (нужны admin-права у $NEXUS_USER;
+    # нет прав → создание молча пропускается, а заливка упадёт с понятной 404 — тогда
+    # создать raw-hosted репозиторий $RAW в UI Nexus один раз вручную).
+    - RAW="${NEXUS_RAW_REPO:-agsales-raw}"; BASE="https://$NEXUS_REGISTRY"
+    - >
+      curl -s -o /dev/null -w 'create %{http_code}\n' -u "$NEXUS_USER:$NEXUS_PASSWORD"
+      -X POST "$BASE/service/rest/v1/repositories/raw/hosted" -H 'Content-Type: application/json'
+      -d "{\"name\":\"$RAW\",\"online\":true,\"storage\":{\"blobStoreName\":\"default\",\"strictContentTypeValidation\":false,\"writePolicy\":\"ALLOW\"}}" || true
+    - curl -sf -u "$NEXUS_USER:$NEXUS_PASSWORD" --upload-file docker-compose.deploy.yml "$BASE/repository/$RAW/agsales/docker-compose.deploy.yml"
+    - curl -sf -u "$NEXUS_USER:$NEXUS_PASSWORD" --upload-file .env.example "$BASE/repository/$RAW/agsales/.env.example"
+    - echo "deploy-bundle → $BASE/repository/$RAW/agsales/"
   after_script:
     - docker logout "$NEXUS_REGISTRY" || true
 

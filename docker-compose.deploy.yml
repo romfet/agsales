@@ -1,0 +1,69 @@
+# Deploy-стек для стороннего контура: тянет ГОТОВЫЕ образы из Nexus (без build).
+# Отличие от docker-compose.yml (сборочный, для стенда/CI) — здесь нет `build:`,
+# образы берутся из реестра Nexus по фиксированным путям.
+#
+#   1) docker login nexus.rumsk01.keenetic.link -u <user>
+#   2) создать рядом .env (см. .env.example) — секреты НЕ в этом файле
+#   3) docker compose -f docker-compose.deploy.yml pull
+#      docker compose -f docker-compose.deploy.yml up -d
+#
+# Образ можно пинить по SHA вместо latest: задай AGSALES_IMAGE_TAG=<short_sha>.
+# Реестр переопределяется через NEXUS_REGISTRY (по умолчанию — боевой Nexus).
+name: agsales
+
+x-backend-image: &backend_image
+  image: ${NEXUS_REGISTRY:-nexus.rumsk01.keenetic.link}/agsales-backend:${AGSALES_IMAGE_TAG:-latest}
+
+services:
+  db:
+    image: ${NEXUS_REGISTRY:-nexus.rumsk01.keenetic.link}/postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agsales}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — see .env.example}
+      POSTGRES_DB: ${POSTGRES_DB:-agsales}
+    # БД только внутри сети compose; на хост не пробрасываем.
+    volumes:
+      - agsales_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agsales}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    <<: *backend_image
+    command: python -m backend.db.migrate
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-agsales}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agsales}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *backend_image
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-agsales}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agsales}
+      # Из .env. ПУСТО = авторизация открыта (только для изолированной отладки!).
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
+      AUTH_CLIENTS: ${AUTH_CLIENTS:-[]}
+    ports:
+      - "127.0.0.1:5050:5050"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    <<: *backend_image
+    command: python -m backend.sync.worker
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-agsales}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agsales}
+      REFRESH_INTERVAL_MINUTES: "10"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  agsales_pgdata:
