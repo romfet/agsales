@@ -1,34 +1,27 @@
 # CI/CD для self-hosted GitLab.
-# Раннер: android-runner на хосте 192.168.2.130 (тег `docker`), с доступом к Docker + compose.
-# CI/CD Variables (Settings → CI/CD → Variables, masked + protected):
-#   AUTH_JWT_SECRET  — секрет подписи токенов (openssl rand -hex 32)
-#   AUTH_CLIENTS     — JSON клиентов, напр.
-#                      [{"client_id":"onec","client_secret":"…","scopes":["ingest","analyze"]}]
-#   POSTGRES_PASSWORD — пароль БД (unprotected: нужен и в test-джобе на всех ветках).
-#                       POSTGRES_USER / POSTGRES_DB — тоже переменными (не секрет).
+# Раннер: android-runner на хосте 192.168.2.130 (тег `docker`), с доступом к Docker.
+# Пайплайн: тесты + публикация образов в Nexus. Деплой на стенд НЕ делается —
+# образы забираются из Nexus и разворачиваются в целевом контуре вручную/отдельно.
+# CI/CD Variables (Settings → CI/CD → Variables):
+#   POSTGRES_USER / POSTGRES_DB / POSTGRES_PASSWORD — для эфемерной БД в test-джобе.
 #   NEXUS_REGISTRY   — хост docker-registry Nexus (nexus.rumsk01.keenetic.link)
 #   NEXUS_USER       — пользователь Nexus с правом push (gitlab)
 #   NEXUS_PASSWORD   — его пароль (masked+protected). Пусто → стадия publish пропускается.
 #   NEXUS_RAW_REPO   — имя raw-hosted репозитория для deploy-раздатки (деф. agsales-raw).
 
-# docker-executor: образ с Docker CLI + compose; команды идут в хостовый Docker.
+# docker-executor: образ с Docker CLI; команды идут в хостовый Docker.
 default:
   image: docker:27
 
 stages:
   - test
-  - deploy
   - publish
 
-# --- Тесты: эфемерный postgres + pytest в образе. Прод-стек НЕ трогаем. ---
+# --- Тесты: эфемерный postgres + pytest в образе. ---
 test:
   stage: test
   tags: [docker]
-  allow_failure: true          # не блокировать деплой из-за флейка CI-докера
-  rules:
-    - if: '$INSPECT == "true"'   # mini-пайплайн осмотра — тесты не нужны
-      when: never
-    - when: on_success
+  allow_failure: true          # не блокировать публикацию из-за флейка CI-докера
   script:
     - docker build -f backend/Dockerfile -t agsales-backend:ci .
     - docker network create "ci-$CI_PIPELINE_ID"
@@ -43,47 +36,20 @@ test:
     - docker rm -f "pg-$CI_PIPELINE_ID" 2>/dev/null || true
     - docker network rm "ci-$CI_PIPELINE_ID" 2>/dev/null || true
 
-# --- Деплой на этот же хост через docker compose (только main) ---
-deploy:
-  stage: deploy
-  tags: [docker]
-  rules:
-    - if: '$INSPECT == "true"'   # mini-пайплайн осмотра — без деплоя
-      when: never
-    - if: '$CI_COMMIT_BRANCH == "main"'
-  environment:
-    name: production
-  resource_group: production        # не пересекать параллельные деплои
-  script:
-    # Обычный деплой применяет миграции (backend.db.migrate) поверх существующих
-    # данных — том НЕ пересоздаётся. CLEAN=true — аварийный полный сброс тома (только
-    # вручную, когда данные не нужны); в штатном цикле не используется.
-    - 'if [ "$CLEAN" = "true" ]; then echo "CLEAN: wiping DB volume"; docker compose down -v; fi'
-    # секреты из CI/CD Variables → .env (его читает docker-compose; в самих compose их нет)
-    - printf 'POSTGRES_USER=%s\n'     "$POSTGRES_USER"     >  .env
-    - printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD" >> .env
-    - printf 'POSTGRES_DB=%s\n'       "$POSTGRES_DB"       >> .env
-    - printf 'AUTH_JWT_SECRET=%s\n'   "$AUTH_JWT_SECRET"   >> .env
-    - printf 'AUTH_CLIENTS=%s\n'      "$AUTH_CLIENTS"      >> .env
-    - docker compose up -d --build
-    - docker compose ps
-    - docker compose exec -T db psql -U agsales -d agsales -c "\d order_lines" || true
-
-# --- Публикация образов в Nexus (после успешного деплоя main). ---
-# Перезаписывает текущие образы: agsales-backend:latest и postgres:16 (+ пин по SHA
-# для отката). Пропускается, если NEXUS_PASSWORD не задан. Требует у репозитория
-# docker-hosted политику «Allow redeploy» (перезапись тегов).
+# --- Публикация образов + deploy-раздатки в Nexus (только main). ---
+# Собирает бэк и заливает agsales-backend:latest (+ пин по SHA) и postgres:16 в
+# docker-hosted, а docker-compose.deploy.yml + .env.example — в raw-hosted репозиторий.
+# Деплой на стенд не выполняется. Пропускается, если NEXUS_PASSWORD не задан.
+# Требует у docker-hosted репозитория политику «Allow redeploy» (перезапись тегов).
 publish:
   stage: publish
   tags: [docker]
-  needs: ["deploy"]
   rules:
-    - if: '$INSPECT == "true"'
-      when: never
     - if: '$CI_COMMIT_BRANCH == "main" && $NEXUS_PASSWORD'
   script:
     - echo "$NEXUS_PASSWORD" | docker login "$NEXUS_REGISTRY" -u "$NEXUS_USER" --password-stdin
-    # бэк: сборку деплоя (agsales-backend:latest) — перезаписываем latest + пин по SHA
+    # бэк: собираем образ и перезаписываем latest + пин по SHA
+    - docker build -f backend/Dockerfile -t agsales-backend:latest .
     - docker tag agsales-backend:latest "$NEXUS_REGISTRY/agsales-backend:latest"
     - docker tag agsales-backend:latest "$NEXUS_REGISTRY/agsales-backend:$CI_COMMIT_SHORT_SHA"
     - docker push "$NEXUS_REGISTRY/agsales-backend:latest"
@@ -108,12 +74,3 @@ publish:
     - echo "deploy-bundle → $BASE/repository/$RAW/agsales/"
   after_script:
     - docker logout "$NEXUS_REGISTRY" || true
-
-# --- mini: только осмотр схемы живой БД (INSPECT=true), без test/deploy ---
-inspect:
-  stage: deploy
-  tags: [docker]
-  rules:
-    - if: '$INSPECT == "true"'
-  script:
-    - docker compose exec -T db psql -U agsales -d agsales -c "\d order_lines"
