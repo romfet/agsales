@@ -6,15 +6,17 @@ emits duplicate n3 recommendations (the old N4-grain bug).
 from backend.app import repository as repo, services
 
 
-def _cp_n3(n3_id, n4_id, freq, avg=5.0, oc=8, to=10):
+def _cp_n3(n3_id, n4_id, freq, avg=5.0, oc=8, to=10, sc=12, ts=15):
     return {"n3_id": n3_id, "n4_id": n4_id, "order_count": oc, "total_orders": to,
+            "shipment_count": sc, "total_shipments": ts,
             "frequency_pct": freq, "avg_qty_per_order": avg}
 
 
-def _np_n3(n3_id, n4_id, niche_pct, freq=20.0, cc=9, tc=10, oc=50, to=100, avg=4.0):
+def _np_n3(n3_id, n4_id, niche_pct, freq=20.0, cc=9, tc=10, oc=50, to=100, sc=80, tsh=140, avg=4.0):
     return {"n3_id": n3_id, "n4_id": n4_id, "client_count": cc,
             "total_clients_in_niche": tc, "order_count": oc,
-            "total_orders_in_niche": to, "niche_pct": niche_pct,
+            "total_orders_in_niche": to, "shipment_count": sc,
+            "total_shipments_in_niche": tsh, "niche_pct": niche_pct,
             "niche_freq_pct": freq, "avg_qty_per_client": avg}
 
 
@@ -24,7 +26,8 @@ async def test_analyze_is_n3_grain_and_deduped(monkeypatch):
     async def niche_profile(_): return [_np_n3("n3-Z", "n4-Z1", niche_pct=90.0)]
     async def n3_for_n4(_ids): return {}
     async def log_rec(*a, **k): return None
-    async def summary(_): return {"shipped_qty": 200.0, "last_shipment_date": "2026-05-13", "orders_in_history": 4}
+    async def summary(_): return {"shipped_qty": 200.0, "last_shipment_date": "2026-05-13",
+                                  "orders_in_history": 4, "shipments_in_history": 11}
 
     monkeypatch.setattr(repo, "get_client_profile_n3", client_profile)
     monkeypatch.setattr(repo, "get_client_niche", niche)
@@ -36,7 +39,8 @@ async def test_analyze_is_n3_grain_and_deduped(monkeypatch):
     res = await services.analyze("cli", lines=[])
 
     assert res["client_summary"]["shipped_qty"] == 200.0        # Отгрузка за период
-    assert res["client_summary"]["orders_in_history"] == 4
+    assert res["client_summary"]["orders_in_history"] == 4       # по заказам
+    assert res["client_summary"]["shipments_in_history"] == 11   # по отгрузкам (РТУ)
 
     forgotten = res["analysis1_forgotten"]
     assert [r["n3_id"] for r in forgotten] == ["n3-A"]

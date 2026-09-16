@@ -54,24 +54,51 @@ async def test_analyze_end_to_end():
 
 
 async def test_client_profile_n3_is_one_row_per_subgroup():
-    """Regression: два SKU одной подгруппы в двух отгрузках → ОДНА N3-строка,
-    order_count = число РАЗНЫХ отгрузок (не по SKU / не по строкам). Профили теперь
-    строятся из shipment_lines, единица события — shipment_id."""
+    """Regression: два SKU одной подгруппы → ОДНА N3-строка (не по SKU / не по
+    строкам). order_count = число РАЗНЫХ ЗАКАЗОВ, shipment_count = число РАЗНЫХ
+    отгрузок. Профили строятся из shipment_lines (реализованная история)."""
     def sline(shipment, n4):
         return {"shipment_id": shipment, "shipment_num": shipment, "shipment_date": "2026-05-01",
                 "order_id": "ord-" + shipment, "client_id": "cli-n3-test", "niche": "НишаX",
                 "n3_id": "n3-X", "n4_id": n4, "qty": 2}
 
-    # S-1: два SKU n3-X; S-2: один SKU → подгруппа в 2 разных отгрузках
+    # S-1 (заказ ord-S-1): два SKU n3-X; S-2 (заказ ord-S-2): один SKU
+    # → 2 разных заказа и 2 разных отгрузки для подгруппы n3-X.
     await repo.ingest_shipment_lines([sline("S-1", "n4-1"), sline("S-1", "n4-2"), sline("S-2", "n4-1")])
     await repo.refresh_aggregates()
 
     rows = [r for r in await repo.get_client_profile_n3("cli-n3-test") if r["n3_id"] == "n3-X"]
     assert len(rows) == 1                    # одна строка на подгруппу, не по SKU
-    assert rows[0]["order_count"] == 2       # разные отгрузки, не 3 строки / 2 SKU
-    assert rows[0]["total_orders"] == 2
+    assert rows[0]["order_count"] == 2       # разные ЗАКАЗЫ (ord-S-1, ord-S-2), не 3 строки / 2 SKU
+    assert rows[0]["shipment_count"] == 2    # разные ОТГРУЗКИ (S-1, S-2)
+    assert rows[0]["total_orders"] == 2 and rows[0]["total_shipments"] == 2
     assert rows[0]["frequency_pct"] == 100.0
     assert rows[0]["n4_id"] in {"n4-1", "n4-2"}   # представительный SKU
+
+
+async def test_order_count_counts_orders_not_shipments():
+    """Ключевая проверка: один ЗАКАЗ, отгруженный несколькими РТУ, даёт order_count=1
+    и shipment_count=N (а не N/N). Ловит регресс обратно на счёт по отгрузкам, из-за
+    которого частота раздувалась у позиций с частичными догрузками."""
+    def sline(sid, qty):
+        return {"shipment_id": sid, "shipment_num": sid, "shipment_date": "2026-07-01",
+                "order_id": "ORD-RTU", "client_id": "cli-rtu", "niche": "НишаR",
+                "n3_id": "n3-R", "n4_id": "n4-R", "qty": qty}
+
+    # один заказ ORD-RTU, отгружен ТРЕМЯ частичными РТУ
+    await repo.ingest_shipment_lines([sline("R-A", 2), sline("R-B", 2), sline("R-C", 2)])
+    await repo.refresh_aggregates()
+
+    rows = [r for r in await repo.get_client_profile_n3("cli-rtu") if r["n3_id"] == "n3-R"]
+    assert len(rows) == 1
+    assert rows[0]["order_count"] == 1        # один ЗАКАЗ, не три
+    assert rows[0]["shipment_count"] == 3     # три ОТГРУЗКИ (РТУ)
+    assert rows[0]["total_orders"] == 1 and rows[0]["total_shipments"] == 3
+    assert rows[0]["frequency_pct"] == 100.0  # 1 заказ / 1 заказ
+    assert rows[0]["avg_qty_per_order"] == 6.0  # 6 тонн / 1 заказ (а не /3 отгрузки)
+
+    summary = await repo.get_client_summary("cli-rtu")
+    assert summary["orders_in_history"] == 1 and summary["shipments_in_history"] == 3
 
 
 async def test_order_versioning_and_diff():

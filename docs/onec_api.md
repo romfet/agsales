@@ -137,16 +137,19 @@
 {
   "client_id": "c0ffee00-...-475e",
   "niche": "f928c3fd-e211-11ef-a380-3448edf7a2ad",
-  "client_summary": { "shipped_qty": 200.0, "last_shipment_date": "2026-05-13", "orders_in_history": 4 },
+  "client_summary": { "shipped_qty": 200.0, "last_shipment_date": "2026-05-13",
+                      "orders_in_history": 4, "shipments_in_history": 11 },
   "analysis1_forgotten": [
     { "type": "missing", "n3_id": "...", "n4_id": "...",
-      "order_count": 8, "total_orders": 20, "shipped_qty": 96.5, "frequency_pct": 40.0,
+      "order_count": 8, "total_orders": 20, "shipment_count": 14, "total_shipments": 33,
+      "shipped_qty": 96.5, "frequency_pct": 40.0,
       "avg_qty": 12.5, "current_qty": null, "priority": "high" }
   ],
   "analysis2_niche": [
     { "n3_id": "...", "n4_id": "...", "niche": "f928c3fd-...",
       "niche_pct": 35.0, "client_count": 18, "total_clients": 51,
-      "order_count": 120, "total_orders": 940, "shipped_qty": 1680.0, "frequency_pct": 12.8,
+      "order_count": 120, "total_orders": 940, "shipment_count": 210, "total_shipments": 1580,
+      "shipped_qty": 1680.0, "frequency_pct": 12.8,
       "client_bought_before": false, "avg_qty_per_client": 9.3, "priority": "high" }
   ]
 }
@@ -155,17 +158,22 @@
 **`client_summary`** — сводка по клиенту для шапки формы: `shipped_qty` — **суммарная
 отгрузка клиента за период (последние 12 мес, тонны)** («Отгрузка за период»),
 `last_shipment_date` — дата последней отгрузки (`YYYY-MM-DD`), `orders_in_history` —
-число заказов (отгрузок) клиента в истории.
+число **разных заказов** клиента в истории, `shipments_in_history` — число **разных
+отгрузок (РТУ)**.
 
 **Поля рекомендаций** (товар/подгруппа — только GUID; имена 1С подставляет сама).
-Примечание: счётчики `order_count`/`total_orders` считаются по **отгрузкам**
-(имена полей сохранены для совместимости контракта).
+Счётчики разведены по единице: `order_count`/`total_orders` — по **заказам**
+(`order_id`), `shipment_count`/`total_shipments` — по **отгрузкам** (`shipment_id`, РТУ).
+`frequency_pct` и `avg_qty` считаются **по заказам**. Всё — из реализованной истории
+(`shipment_lines`): заказ без единой РТУ в счётчики не входит.
 
 `analysis1_forgotten[]`: `type` (`missing`|`low_quantity`), `n3_id`, `n4_id`,
-`order_count`/`total_orders`, **`shipped_qty`**, `frequency_pct`, `avg_qty`, `current_qty`, `priority` (`high`|`medium`).
+`order_count`/`total_orders`, `shipment_count`/`total_shipments`, **`shipped_qty`**,
+`frequency_pct`, `avg_qty`, `current_qty`, `priority` (`high`|`medium`).
 
 `analysis2_niche[]`: `n3_id`, `n4_id`, `niche`, `niche_pct`, `client_count`/`total_clients`,
-`order_count`/`total_orders`, **`shipped_qty`**, `frequency_pct`, `client_bought_before`, `avg_qty_per_client`, `priority`.
+`order_count`/`total_orders`, `shipment_count`/`total_shipments`, **`shipped_qty`**,
+`frequency_pct`, `client_bought_before`, `avg_qty_per_client`, `priority`.
 
 **`shipped_qty`** — **отгружено тонн по этой подгруппе за последние 12 месяцев (из
 РТУ)**: в `analysis1_forgotten` — по данному клиенту, в `analysis2_niche` — по всей

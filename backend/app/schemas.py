@@ -93,8 +93,10 @@ class ForgottenItem(BaseModel):
     type: str
     n3_id: str
     n4_id: str | None = None
-    order_count: int
-    total_orders: int
+    order_count: int                # заказов клиента с подгруппой
+    total_orders: int               # всего заказов клиента
+    shipment_count: int = 0         # отгрузок (РТУ) клиента с подгруппой
+    total_shipments: int = 0        # всего отгрузок клиента
     shipped_qty: float = 0.0        # Σ отгружено тонн клиентом по подгруппе (из РТУ)
     frequency_pct: float
     avg_qty: float
@@ -109,8 +111,10 @@ class NicheItem(BaseModel):
     niche_pct: float
     client_count: int
     total_clients: int
-    order_count: int
-    total_orders: int
+    order_count: int                # заказов в нише с подгруппой
+    total_orders: int               # всего заказов в нише
+    shipment_count: int = 0         # отгрузок (РТУ) в нише с подгруппой
+    total_shipments: int = 0        # всего отгрузок в нише
     shipped_qty: float = 0.0        # Σ отгружено тонн в нише по подгруппе (из РТУ)
     frequency_pct: float
     client_bought_before: bool
@@ -123,7 +127,8 @@ class ClientSummary(BaseModel):
 
     shipped_qty: float = 0.0              # Отгрузка за период (12 мес), тн — суммарно по клиенту
     last_shipment_date: str | None = None  # Дата последней отгрузки (YYYY-MM-DD)
-    orders_in_history: int = 0           # Заказов (отгрузок) в истории
+    orders_in_history: int = 0           # Разных заказов в истории (реализованных)
+    shipments_in_history: int = 0        # Разных отгрузок (РТУ) в истории
 
 
 class AnalyzeOut(BaseModel):

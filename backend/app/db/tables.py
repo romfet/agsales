@@ -92,6 +92,7 @@ client_dim = Table(
     Column("client_name", Text),
     Column("niche", Text),
     Column("total_orders", Integer),
+    Column("total_shipments", Integer),
 )
 
 niche_dim = Table(
@@ -100,6 +101,7 @@ niche_dim = Table(
     Column("niche", Text, primary_key=True),
     Column("total_clients_in_niche", Integer),
     Column("total_orders_in_niche", Integer),
+    Column("total_shipments_in_niche", Integer),
 )
 
 products = Table(
@@ -116,9 +118,11 @@ client_profile_n3 = Table(
     Column("n3_id", Text),
     Column("rep_n4_id", Text),
     Column("order_count", Integer),
+    Column("shipment_count", Integer),
     Column("total_qty", Numeric),
     Column("total_qty_12m", Numeric),
     Column("total_orders", Integer),
+    Column("total_shipments", Integer),
     Column("frequency_pct", Numeric),
     Column("avg_qty_per_order", Numeric),
 )
@@ -131,10 +135,12 @@ niche_profile_n3 = Table(
     Column("rep_n4_id", Text),
     Column("client_count", Integer),
     Column("order_count", Integer),
+    Column("shipment_count", Integer),
     Column("total_qty", Numeric),
     Column("total_qty_12m", Numeric),
     Column("total_clients_in_niche", Integer),
     Column("total_orders_in_niche", Integer),
+    Column("total_shipments_in_niche", Integer),
     Column("niche_pct", Numeric),
     Column("niche_freq_pct", Numeric),
     Column("avg_qty_per_client", Numeric),

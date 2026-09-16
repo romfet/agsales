@@ -30,8 +30,10 @@ def _row_to_client_profile_n3(r) -> dict:
     return {
         "n3_id": r.n3_id,
         "n4_id": r.rep_n4_id,
-        "order_count": int(r.order_count),
-        "total_orders": int(r.total_orders),
+        "order_count": int(r.order_count),          # заказов клиента с подгруппой
+        "total_orders": int(r.total_orders),        # всего заказов клиента
+        "shipment_count": int(r.shipment_count),    # отгрузок (РТУ) с подгруппой
+        "total_shipments": int(r.total_shipments),  # всего отгрузок клиента
         "frequency_pct": _f(r.frequency_pct),
         "avg_qty_per_order": _f(r.avg_qty_per_order),
         "total_qty_12m": _f(r.total_qty_12m),   # Σ отгружено тонн за 12 мес (из РТУ)
@@ -44,8 +46,10 @@ def _row_to_niche_profile_n3(r) -> dict:
         "n4_id": r.rep_n4_id,
         "client_count": int(r.client_count),
         "total_clients_in_niche": int(r.total_clients_in_niche),
-        "order_count": int(r.order_count),
-        "total_orders_in_niche": int(r.total_orders_in_niche),
+        "order_count": int(r.order_count),                       # заказов в нише с подгруппой
+        "total_orders_in_niche": int(r.total_orders_in_niche),   # всего заказов в нише
+        "shipment_count": int(r.shipment_count),                 # отгрузок в нише с подгруппой
+        "total_shipments_in_niche": int(r.total_shipments_in_niche),  # всего отгрузок в нише
         "niche_pct": _f(r.niche_pct),
         "niche_freq_pct": _f(r.niche_freq_pct),
         "avg_qty_per_client": _f(r.avg_qty_per_client),
@@ -226,14 +230,17 @@ async def get_client_niche(client_id: str) -> str | None:
 
 async def get_client_summary(client_id: str) -> dict:
     """Клиентская сводка для шапки формы 1С: суммарная отгрузка за период (тонны,
-    последние 12 мес), дата последней отгрузки, число заказов (отгрузок) в истории."""
+    последние 12 мес), дата последней отгрузки, число заказов и отгрузок (РТУ) в
+    истории. Заказы/отгрузки считаются из реализованной истории (shipment_lines):
+    orders_in_history — РАЗНЫЕ заказы, shipments_in_history — РАЗНЫЕ отгрузки."""
     sql = text(
         """
         SELECT
             COALESCE(sum(qty) FILTER (
                 WHERE shipment_date >= CURRENT_DATE - INTERVAL '1 year'), 0) AS shipped_qty,
             max(shipment_date)          AS last_shipment_date,
-            count(DISTINCT shipment_id) AS orders_in_history
+            count(DISTINCT order_id)    AS orders_in_history,
+            count(DISTINCT shipment_id) AS shipments_in_history
         FROM shipment_lines WHERE client_id = :cid
         """
     )
@@ -243,6 +250,7 @@ async def get_client_summary(client_id: str) -> dict:
         "shipped_qty": round(float(r.shipped_qty or 0), 3),
         "last_shipment_date": r.last_shipment_date.isoformat() if r.last_shipment_date else None,
         "orders_in_history": int(r.orders_in_history or 0),
+        "shipments_in_history": int(r.shipments_in_history or 0),
     }
 
 

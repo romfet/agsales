@@ -2,20 +2,25 @@
 from backend.app.domain import analyzer
 
 
-def _cp(n3_id, n4_id, freq, avg, oc=5, to=20, tq=123.456):
+def _cp(n3_id, n4_id, freq, avg, oc=5, to=20, sc=9, ts=30, tq=123.456):
     return {
         "n3_id": n3_id, "n4_id": n4_id,
-        "order_count": oc, "total_orders": to,
+        "order_count": oc, "total_orders": to,           # по ЗАКАЗАМ
+        "shipment_count": sc, "total_shipments": ts,     # по ОТГРУЗКАМ (РТУ)
         "frequency_pct": freq, "avg_qty_per_order": avg,
         "total_qty_12m": tq,
     }
 
 
 def test_forgotten_flags_missing_frequent_product():
-    recs = analyzer.analyze_forgotten([_cp("n3-arm", "n4-12", freq=40, avg=10, tq=42.5)], order_lines=[])
+    recs = analyzer.analyze_forgotten(
+        [_cp("n3-arm", "n4-12", freq=40, avg=10, oc=5, to=20, sc=9, ts=30, tq=42.5)], order_lines=[])
     assert len(recs) == 1
     assert recs[0]["type"] == "missing" and recs[0]["priority"] == "high"
     assert recs[0]["shipped_qty"] == 42.5        # Σ отгружено тонн по РТУ
+    # Счётчики заказов и отгрузок прокидываются раздельно (не путаются местами).
+    assert recs[0]["order_count"] == 5 and recs[0]["total_orders"] == 20
+    assert recs[0]["shipment_count"] == 9 and recs[0]["total_shipments"] == 30
 
 
 def test_forgotten_ignores_below_threshold():
@@ -42,21 +47,28 @@ def test_forgotten_sorted_and_capped_at_top_n():
     assert freqs == sorted(freqs, reverse=True)
 
 
-def _np(n3_id, n4_id, niche_pct, freq, cc=4, tc=10, oc=8, to=50, avg=3, tq=987.654):
+def _np(n3_id, n4_id, niche_pct, freq, cc=4, tc=10, oc=8, to=50, sc=15, tsh=90, avg=3, tq=987.654):
     return {
         "n3_id": n3_id, "n4_id": n4_id,
         "client_count": cc, "total_clients_in_niche": tc,
-        "order_count": oc, "total_orders_in_niche": to,
+        "order_count": oc, "total_orders_in_niche": to,              # по ЗАКАЗАМ
+        "shipment_count": sc, "total_shipments_in_niche": tsh,       # по ОТГРУЗКАМ (РТУ)
         "niche_pct": niche_pct, "niche_freq_pct": freq, "avg_qty_per_client": avg,
         "total_qty_12m": tq,
     }
 
 
 def test_niche_recommends_absent_popular_product():
-    recs = analyzer.analyze_niche("Строительство", [_np("n3-tr", "n4-9", niche_pct=12, freq=20, tq=77.0)], set(), order_lines=[])
+    recs = analyzer.analyze_niche(
+        "Строительство",
+        [_np("n3-tr", "n4-9", niche_pct=12, freq=20, oc=8, to=50, sc=15, tsh=90, tq=77.0)],
+        set(), order_lines=[])
     assert len(recs) == 1
     assert recs[0]["priority"] == "high" and recs[0]["client_bought_before"] is False
     assert recs[0]["shipped_qty"] == 77.0        # Σ отгружено тонн в нише по РТУ
+    # order_* — по заказам, shipment_* — по отгрузкам; знаменатели ниши не перепутаны.
+    assert recs[0]["order_count"] == 8 and recs[0]["total_orders"] == 50
+    assert recs[0]["shipment_count"] == 15 and recs[0]["total_shipments"] == 90
 
 
 def test_niche_marks_client_bought_before():
