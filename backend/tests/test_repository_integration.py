@@ -246,3 +246,63 @@ async def test_recommendation_log_written_on_analyze():
             "SELECT kind, count(*) AS n FROM recommendation_log WHERE order_id='ORD-LOG-1' GROUP BY kind"))).all()}
     assert sum(kinds.values()) > 0
     assert set(kinds) <= {"forgotten", "niche"}
+
+
+async def test_recommendation_effect_n4_same_and_new_order():
+    """Only a recommended, added and shipped N4 becomes direct effect."""
+    from datetime import date, timedelta
+
+    today = date.today()
+    next_business = today + timedelta(days=1)
+    while next_business.weekday() >= 5:
+        next_business += timedelta(days=1)
+
+    def oline(order_id, order_date, n4, qty):
+        return {
+            "order_id": order_id, "order_num": order_id,
+            "order_date": order_date.isoformat(), "client_id": "cli-effect-n4",
+            "niche": "niche-effect-n4", "n3_id": "n3-effect", "n4_id": n4,
+            "qty": qty,
+        }
+
+    # Same-order scenario: N4-R is absent in the first version and added later.
+    await repo.ingest_order_lines([oline("EFF-SOURCE", today, "n4-base", 1)])
+    await repo.log_recommendations(
+        "cli-effect-n4", "EFF-SOURCE",
+        [{"n3_id": "n3-effect", "n4_id": "n4-R", "priority": "high"}], [],
+    )
+    await repo.ingest_order_lines([
+        oline("EFF-SOURCE", today, "n4-base", 1),
+        oline("EFF-SOURCE", today, "n4-R", 5),
+    ])
+    await repo.ingest_shipment_lines([{
+        "shipment_id": "EFF-SHIP-SAME", "shipment_num": "EFF-SHIP-SAME",
+        "shipment_date": today.isoformat(), "order_id": "EFF-SOURCE",
+        "client_id": "cli-effect-n4", "niche": "niche-effect-n4",
+        "n3_id": "n3-effect", "n4_id": "n4-R", "qty": 4,
+    }])
+
+    # New-order scenario: N4-N is recommended in the source order and appears in
+    # the first eligible new order of the same client.
+    await repo.log_recommendations(
+        "cli-effect-n4", "EFF-SOURCE",
+        [], [{"n3_id": "n3-effect", "n4_id": "n4-N", "priority": "high"}],
+    )
+    await repo.ingest_order_lines([
+        oline("EFF-TARGET", next_business, "n4-N", 7),
+    ])
+    await repo.ingest_shipment_lines([{
+        "shipment_id": "EFF-SHIP-NEW", "shipment_num": "EFF-SHIP-NEW",
+        "shipment_date": next_business.isoformat(), "order_id": "EFF-TARGET",
+        "client_id": "cli-effect-n4", "niche": "niche-effect-n4",
+        "n3_id": "n3-effect", "n4_id": "n4-N", "qty": 6,
+    }])
+    await repo.refresh_aggregates()
+
+    rows, _ = await repo.get_recommendation_effect_n4(niche="niche-effect-n4")
+    by_scenario = {row["scenario"]: row for row in rows}
+    assert by_scenario["same_order"]["n4_id"] == "n4-R"
+    assert by_scenario["same_order"]["realized_qty"] == 4.0
+    assert by_scenario["new_order"]["n4_id"] == "n4-N"
+    assert by_scenario["new_order"]["target_order_id"] == "EFF-TARGET"
+    assert by_scenario["new_order"]["realized_qty"] == 6.0

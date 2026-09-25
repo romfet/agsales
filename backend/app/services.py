@@ -5,37 +5,43 @@ from backend.app import repository as repo
 from backend.app.domain import analyzer
 
 
-async def _resolve_n3(lines: list[dict]) -> list[dict]:
-    """Normalize draft-order lines to {n3_id, qty}. Lines may carry n4_id
-    (n3 resolved from the synced catalog) and/or n3_id directly."""
+async def _normalize_order_lines(lines: list[dict]) -> list[dict]:
+    """Preserve N4-grain draft lines and resolve their parent N3 when needed.
+
+    Legacy N3-only lines are retained. The analyzer treats them conservatively by
+    suppressing every recommendation from that N3 rather than guessing the SKU.
+    """
     need = [l["n4_id"] for l in lines if not l.get("n3_id") and l.get("n4_id")]
     n3_by_n4 = await repo.get_n3_for_n4(need) if need else {}
     out: list[dict] = []
     for l in lines:
-        n3 = l.get("n3_id") or n3_by_n4.get(l.get("n4_id"))
-        if n3:
-            out.append({"n3_id": n3, "qty": l.get("qty") or 0})
+        n4 = l.get("n4_id")
+        n3 = l.get("n3_id") or n3_by_n4.get(n4)
+        if n4 or n3:
+            out.append({"n3_id": n3, "n4_id": n4, "qty": l.get("qty") or 0})
     return out
 
 
 async def analyze(client_id: str, lines: list[dict], order_id: str | None = None) -> dict:
     """Run both analyses for a client + the current (draft) order. Выданные
     рекомендации логируются в recommendation_log (сигнал «ассистент сработал»)."""
-    order_lines = await _resolve_n3(lines)
+    order_lines = await _normalize_order_lines(lines)
 
     summary = await repo.get_client_summary(client_id)   # шапка формы 1С
     niche = await repo.get_client_niche(client_id)
 
-    # Профили на уровне N3 (одна строка на подгруппу) — анализ идёт по N3.
-    client_profile = await repo.get_client_profile_n3(client_id)
+    # Профили на уровне конкретного товара N4; N3 сохраняется как родительская группа.
+    client_profile = await repo.get_client_profile_n4(client_id)
     forgotten = analyzer.analyze_forgotten(client_profile, order_lines)
 
     niche_recs: list[dict] = []
     if niche:
-        niche_profile = await repo.get_niche_profile_n3(niche)
-        # Множество N3, что клиент брал, = подгруппы его профиля (без доп. запроса).
-        bought = {r["n3_id"] for r in client_profile}
-        niche_recs = analyzer.analyze_niche(niche, niche_profile, bought, order_lines)
+        niche_profile = await repo.get_niche_profile_n4(niche)
+        bought = {r["n4_id"] for r in client_profile}
+        shown = {r["n4_id"] for r in forgotten}
+        niche_recs = analyzer.analyze_niche(
+            niche, niche_profile, bought, order_lines, excluded_n4_ids=shown
+        )
 
     await repo.log_recommendations(client_id, order_id, forgotten, niche_recs)
 

@@ -75,8 +75,8 @@ class IngestShipmentResult(BaseModel):
 
 # --- Analyze (operator → us; endpoint 2) ---
 class OrderLineIn(BaseModel):
-    """A line of the current (draft) order. Analyzer works at N3 level: send
-    ``n4_id`` (n3 resolved server-side) or ``n3_id`` directly."""
+    """A line of the current order. N4 is the normal analysis grain; an N3-only
+    legacy line conservatively suppresses all recommendations from that group."""
 
     n4_id: str | None = None
     n3_id: str | None = None
@@ -93,11 +93,11 @@ class ForgottenItem(BaseModel):
     type: str
     n3_id: str
     n4_id: str | None = None
-    order_count: int                # заказов клиента с подгруппой
+    order_count: int                # заказов клиента с N4
     total_orders: int               # всего заказов клиента
-    shipment_count: int = 0         # отгрузок (РТУ) клиента с подгруппой
+    shipment_count: int = 0         # отгрузок (РТУ) клиента с N4
     total_shipments: int = 0        # всего отгрузок клиента
-    shipped_qty: float = 0.0        # Σ отгружено тонн клиентом по подгруппе (из РТУ)
+    shipped_qty: float = 0.0        # Σ отгружено тонн клиентом по N4 (из РТУ)
     frequency_pct: float
     avg_qty: float
     current_qty: float | None = None
@@ -111,11 +111,11 @@ class NicheItem(BaseModel):
     niche_pct: float
     client_count: int
     total_clients: int
-    order_count: int                # заказов в нише с подгруппой
+    order_count: int                # заказов в нише с N4
     total_orders: int               # всего заказов в нише
-    shipment_count: int = 0         # отгрузок (РТУ) в нише с подгруппой
+    shipment_count: int = 0         # отгрузок (РТУ) в нише с N4
     total_shipments: int = 0        # всего отгрузок в нише
-    shipped_qty: float = 0.0        # Σ отгружено тонн в нише по подгруппе (из РТУ)
+    shipped_qty: float = 0.0        # Σ отгружено тонн в нише по N4 (из РТУ)
     frequency_pct: float
     client_bought_before: bool
     avg_qty_per_client: float
@@ -179,6 +179,32 @@ class RecommendationLogRow(BaseModel):
 
 class RecommendationLogPage(BaseModel):
     items: list[RecommendationLogRow]
+    limit: int
+    offset: int
+    count: int
+
+
+class RecommendationEffectN4Row(BaseModel):
+    """Confirmed direct effect of one recommended N4 in the same or a new order."""
+
+    recommendation_id: int
+    recommendation_at: str | None = None
+    client_id: str
+    niche: str | None = None
+    kind: str
+    scenario: str                       # same_order | new_order
+    source_order_id: str
+    target_order_id: str
+    n3_id: str
+    n4_id: str
+    target_order_date: str | None = None
+    ordered_qty: float
+    shipped_qty: float
+    realized_qty: float
+
+
+class RecommendationEffectN4Page(BaseModel):
+    items: list[RecommendationEffectN4Row]
     limit: int
     offset: int
     count: int

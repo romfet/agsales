@@ -27,14 +27,19 @@ def test_forgotten_ignores_below_threshold():
     assert analyzer.analyze_forgotten([_cp("n3-arm", "n4-12", freq=3, avg=10)], order_lines=[]) == []
 
 
-def test_forgotten_flags_low_quantity_when_present():
+def test_forgotten_skips_exact_n4_already_in_order():
     profile = [_cp("n3-list", "n4-8", freq=30, avg=10)]
-    order = [{"n3_id": "n3-list", "qty": 2}]  # 2 < 10 * 0.5
-    recs = analyzer.analyze_forgotten(profile, order)
-    assert recs[0]["type"] == "low_quantity" and recs[0]["current_qty"] == 2
+    order = [{"n3_id": "n3-list", "n4_id": "n4-8", "qty": 2}]
+    assert analyzer.analyze_forgotten(profile, order) == []
 
 
-def test_forgotten_ok_quantity_not_flagged():
+def test_forgotten_can_recommend_another_n4_from_same_n3():
+    profile = [_cp("n3-list", "n4-8", freq=30, avg=10)]
+    order = [{"n3_id": "n3-list", "n4_id": "n4-10", "qty": 8}]
+    assert [r["n4_id"] for r in analyzer.analyze_forgotten(profile, order)] == ["n4-8"]
+
+
+def test_forgotten_n3_only_line_suppresses_entire_group():
     profile = [_cp("n3-list", "n4-8", freq=30, avg=10)]
     assert analyzer.analyze_forgotten(profile, [{"n3_id": "n3-list", "qty": 8}]) == []
 
@@ -71,18 +76,23 @@ def test_niche_recommends_absent_popular_product():
     assert recs[0]["shipment_count"] == 15 and recs[0]["total_shipments"] == 90
 
 
-def test_niche_marks_client_bought_before():
-    # client_bought_before теперь по подгруппе (N3), не по SKU.
+def test_niche_marks_client_bought_before_by_n4():
     recs = analyzer.analyze_niche("Строительство", [_np("n3-tr", "n4-9", niche_pct=12, freq=20)], {"n3-tr"}, order_lines=[])
+    assert recs[0]["client_bought_before"] is False
+
+    recs = analyzer.analyze_niche("Строительство", [_np("n3-tr", "n4-9", niche_pct=12, freq=20)], {"n4-9"}, order_lines=[])
     assert recs[0]["client_bought_before"] is True
 
 
-def test_niche_bought_before_ignores_n4_level_set():
-    # набор SKU (n4) не должен влиять на флаг — сверяемся с подгруппой (n3).
-    recs = analyzer.analyze_niche("Строительство", [_np("n3-tr", "n4-9", niche_pct=12, freq=20)], {"n4-9"}, order_lines=[])
-    assert recs[0]["client_bought_before"] is False
+def test_niche_excludes_duplicates_already_shown_in_client_top():
+    prof = [_np("n3-tr", "n4-9", niche_pct=12, freq=20)]
+    assert analyzer.analyze_niche(
+        "Строительство", prof, set(), [], excluded_n4_ids={"n4-9"}
+    ) == []
 
 
 def test_niche_skips_products_in_current_order():
     prof = [_np("n3-tr", "n4-9", niche_pct=12, freq=20)]
-    assert analyzer.analyze_niche("Строительство", prof, set(), [{"n3_id": "n3-tr", "qty": 1}]) == []
+    assert analyzer.analyze_niche(
+        "Строительство", prof, set(), [{"n3_id": "n3-tr", "n4_id": "n4-9", "qty": 1}]
+    ) == []

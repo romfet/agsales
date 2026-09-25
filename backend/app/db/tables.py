@@ -146,6 +146,41 @@ niche_profile_n3 = Table(
     Column("avg_qty_per_client", Numeric),
 )
 
+client_profile_n4 = Table(
+    "client_profile_n4",
+    metadata,
+    Column("client_id", Text),
+    Column("n3_id", Text),
+    Column("n4_id", Text),
+    Column("order_count", Integer),
+    Column("shipment_count", Integer),
+    Column("total_qty", Numeric),
+    Column("total_qty_12m", Numeric),
+    Column("total_orders", Integer),
+    Column("total_shipments", Integer),
+    Column("frequency_pct", Numeric),
+    Column("avg_qty_per_order", Numeric),
+)
+
+niche_profile_n4 = Table(
+    "niche_profile_n4",
+    metadata,
+    Column("niche", Text),
+    Column("n3_id", Text),
+    Column("n4_id", Text),
+    Column("client_count", Integer),
+    Column("order_count", Integer),
+    Column("shipment_count", Integer),
+    Column("total_qty", Numeric),
+    Column("total_qty_12m", Numeric),
+    Column("total_clients_in_niche", Integer),
+    Column("total_orders_in_niche", Integer),
+    Column("total_shipments_in_niche", Integer),
+    Column("niche_pct", Numeric),
+    Column("niche_freq_pct", Numeric),
+    Column("avg_qty_per_client", Numeric),
+)
+
 # Ниша клиента (мода) из заказов ∪ отгрузок — резолв ниши, работает и до отгрузок.
 client_niche = Table(
     "client_niche",
@@ -174,6 +209,25 @@ effect_funnel = Table(
     Column("is_shipped", Integer),
 )
 
+recommendation_effect_n4 = Table(
+    "recommendation_effect_n4",
+    metadata,
+    Column("recommendation_id", BigInteger),
+    Column("recommendation_at", DateTime(timezone=True)),
+    Column("client_id", Text),
+    Column("niche", Text),
+    Column("kind", Text),
+    Column("scenario", Text),
+    Column("source_order_id", Text),
+    Column("target_order_id", Text),
+    Column("n3_id", Text),
+    Column("n4_id", Text),
+    Column("target_order_date", Date),
+    Column("ordered_qty", Numeric),
+    Column("shipped_qty", Numeric),
+    Column("realized_qty", Numeric),
+)
+
 # Refresh order respects matview dependencies (dims before profiles).
 MATERIALIZED_VIEWS = [
     "client_dim",
@@ -182,5 +236,8 @@ MATERIALIZED_VIEWS = [
     "client_niche",
     "client_profile_n3",
     "niche_profile_n3",
+    "client_profile_n4",
+    "niche_profile_n4",
     "effect_funnel",
+    "recommendation_effect_n4",
 ]

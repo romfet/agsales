@@ -57,6 +57,37 @@ def _row_to_niche_profile_n3(r) -> dict:
     }
 
 
+def _row_to_client_profile_n4(r) -> dict:
+    return {
+        "n3_id": r.n3_id,
+        "n4_id": r.n4_id,
+        "order_count": int(r.order_count),
+        "total_orders": int(r.total_orders),
+        "shipment_count": int(r.shipment_count),
+        "total_shipments": int(r.total_shipments),
+        "frequency_pct": _f(r.frequency_pct),
+        "avg_qty_per_order": _f(r.avg_qty_per_order),
+        "total_qty_12m": _f(r.total_qty_12m),
+    }
+
+
+def _row_to_niche_profile_n4(r) -> dict:
+    return {
+        "n3_id": r.n3_id,
+        "n4_id": r.n4_id,
+        "client_count": int(r.client_count),
+        "total_clients_in_niche": int(r.total_clients_in_niche),
+        "order_count": int(r.order_count),
+        "total_orders_in_niche": int(r.total_orders_in_niche),
+        "shipment_count": int(r.shipment_count),
+        "total_shipments_in_niche": int(r.total_shipments_in_niche),
+        "niche_pct": _f(r.niche_pct),
+        "niche_freq_pct": _f(r.niche_freq_pct),
+        "avg_qty_per_client": _f(r.avg_qty_per_client),
+        "total_qty_12m": _f(r.total_qty_12m),
+    }
+
+
 # --- Ingest (1С feed → raw table) ----------------------------------------
 
 _ORDER_FIELDS = ("order_id", "order_num", "order_date", "client_id", "client_name",
@@ -282,6 +313,20 @@ async def get_niche_profile_n3(niche: str) -> list[dict]:
     return [_row_to_niche_profile_n3(r) for r in rows]
 
 
+async def get_client_profile_n4(client_id: str) -> list[dict]:
+    q = select(t.client_profile_n4).where(t.client_profile_n4.c.client_id == client_id)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(q)).all()
+    return [_row_to_client_profile_n4(r) for r in rows]
+
+
+async def get_niche_profile_n4(niche: str) -> list[dict]:
+    q = select(t.niche_profile_n4).where(t.niche_profile_n4.c.niche == niche)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(q)).all()
+    return [_row_to_niche_profile_n4(r) for r in rows]
+
+
 # --- Order versions / diff (для аналитики эффекта) ------------------------
 
 async def get_order_diff(order_id: str) -> list[dict]:
@@ -417,6 +462,58 @@ async def get_recommendation_log(
         rows = (await conn.execute(q)).all()
         total = int(await conn.scalar(cq))
     return [_row_to_reclog(r) for r in rows], total
+
+
+def _row_to_recommendation_effect_n4(r) -> dict:
+    return {
+        "recommendation_id": int(r.recommendation_id),
+        "recommendation_at": r.recommendation_at.isoformat() if r.recommendation_at else None,
+        "client_id": r.client_id,
+        "niche": r.niche,
+        "kind": r.kind,
+        "scenario": r.scenario,
+        "source_order_id": r.source_order_id,
+        "target_order_id": r.target_order_id,
+        "n3_id": r.n3_id,
+        "n4_id": r.n4_id,
+        "target_order_date": r.target_order_date.isoformat() if r.target_order_date else None,
+        "ordered_qty": _f(r.ordered_qty),
+        "shipped_qty": _f(r.shipped_qty),
+        "realized_qty": _f(r.realized_qty),
+    }
+
+
+async def get_recommendation_effect_n4(
+    niche: str | None = None,
+    scenario: str | None = None,
+    period_from: date | None = None,
+    period_to: date | None = None,
+    limit: int = 1000,
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """Confirmed direct effect for recommended N4 positions only."""
+    view = t.recommendation_effect_n4
+    conds = []
+    if niche:
+        conds.append(view.c.niche == niche)
+    if scenario:
+        conds.append(view.c.scenario == scenario)
+    if period_from:
+        conds.append(view.c.target_order_date >= period_from)
+    if period_to:
+        conds.append(view.c.target_order_date <= period_to)
+    q = select(view)
+    cq = select(func.count()).select_from(view)
+    for condition in conds:
+        q = q.where(condition)
+        cq = cq.where(condition)
+    q = q.order_by(
+        view.c.target_order_date, view.c.target_order_id, view.c.n4_id
+    ).limit(limit).offset(offset)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(q)).all()
+        total = int(await conn.scalar(cq))
+    return [_row_to_recommendation_effect_n4(r) for r in rows], total
 
 
 # --- Aggregates -----------------------------------------------------------

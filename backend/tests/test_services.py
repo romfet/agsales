@@ -1,8 +1,4 @@
-"""Service-layer tests with mocked repository (no DB).
-
-Guards the N3-grain contract: analyze() reads one row per subgroup and never
-emits duplicate n3 recommendations (the old N4-grain bug).
-"""
+"""Service-layer tests with mocked repository (no DB)."""
 from backend.app import repository as repo, services
 
 
@@ -20,18 +16,21 @@ def _np_n3(n3_id, n4_id, niche_pct, freq=20.0, cc=9, tc=10, oc=50, to=100, sc=80
             "niche_freq_pct": freq, "avg_qty_per_client": avg}
 
 
-async def test_analyze_is_n3_grain_and_deduped(monkeypatch):
+async def test_analyze_is_n4_grain_and_deduped_between_lists(monkeypatch):
     async def client_profile(_): return [_cp_n3("n3-A", "n4-A1", freq=80.0)]
     async def niche(_): return "Строительство"
-    async def niche_profile(_): return [_np_n3("n3-Z", "n4-Z1", niche_pct=90.0)]
+    async def niche_profile(_): return [
+        _np_n3("n3-A", "n4-A1", niche_pct=95.0),
+        _np_n3("n3-Z", "n4-Z1", niche_pct=90.0),
+    ]
     async def n3_for_n4(_ids): return {}
     async def log_rec(*a, **k): return None
     async def summary(_): return {"shipped_qty": 200.0, "last_shipment_date": "2026-05-13",
                                   "orders_in_history": 4, "shipments_in_history": 11}
 
-    monkeypatch.setattr(repo, "get_client_profile_n3", client_profile)
+    monkeypatch.setattr(repo, "get_client_profile_n4", client_profile)
     monkeypatch.setattr(repo, "get_client_niche", niche)
-    monkeypatch.setattr(repo, "get_niche_profile_n3", niche_profile)
+    monkeypatch.setattr(repo, "get_niche_profile_n4", niche_profile)
     monkeypatch.setattr(repo, "get_n3_for_n4", n3_for_n4)
     monkeypatch.setattr(repo, "log_recommendations", log_rec)
     monkeypatch.setattr(repo, "get_client_summary", summary)
@@ -44,14 +43,23 @@ async def test_analyze_is_n3_grain_and_deduped(monkeypatch):
 
     forgotten = res["analysis1_forgotten"]
     assert [r["n3_id"] for r in forgotten] == ["n3-A"]
-    assert forgotten[0]["n4_id"] == "n4-A1"          # representative product carried
+    assert forgotten[0]["n4_id"] == "n4-A1"
     assert forgotten[0]["type"] == "missing"
 
     niche_recs = res["analysis2_niche"]
     assert [r["n3_id"] for r in niche_recs] == ["n3-Z"]
     assert niche_recs[0]["client_bought_before"] is False
 
-    # no subgroup appears twice in either list
-    for lst in (forgotten, niche_recs):
-        n3s = [r["n3_id"] for r in lst]
-        assert len(n3s) == len(set(n3s))
+    # The same N4 is never emitted in both lists.
+    assert {r["n4_id"] for r in forgotten}.isdisjoint(
+        {r["n4_id"] for r in niche_recs}
+    )
+
+
+async def test_normalize_preserves_n4_and_resolves_parent_n3(monkeypatch):
+    async def n3_for_n4(_ids): return {"n4-A": "n3-A"}
+    monkeypatch.setattr(repo, "get_n3_for_n4", n3_for_n4)
+
+    assert await services._normalize_order_lines([{"n4_id": "n4-A", "qty": 2}]) == [
+        {"n3_id": "n3-A", "n4_id": "n4-A", "qty": 2}
+    ]
