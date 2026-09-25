@@ -16,7 +16,8 @@
 | 5 | POST | `/api/analyze` | `analyze` |
 | 6 | GET  | `/api/effect/funnel` | `effect` |
 | 7 | GET  | `/api/effect/recommendations` | `effect` |
-| 8 | GET  | `/health` | — |
+| 8 | GET  | `/api/effect/recommendation-attribution` | `effect` |
+| 9 | GET  | `/health` | — |
 
 ---
 
@@ -118,7 +119,8 @@
 **Ответ 200:** `{ "status": "ok", "rows": 26565 }`
 
 ## 5. POST /api/analyze
-Текущая заявка → рекомендации. Stateless. Анализ на уровне подгруппы (N3).
+Текущая заявка → рекомендации. Stateless. Анализ на уровне конкретного товара N4;
+N3 возвращается как родительская группа.
 ```json
 {
   "client_id": "c0ffee00-4c57-11ec-a32e-3448edf7a2ad",
@@ -128,9 +130,12 @@
   ]
 }
 ```
-- В строке достаточно `n4_id` **или** `n3_id` + `qty`.
-- `order_id` (GUID разбираемого заказа) — необязателен, но **желателен**: по нему
-  выданные рекомендации логируются и привязываются к заказу (аналитика эффекта).
+- Штатно строка содержит `n4_id` + `qty`; `n3_id` можно передать дополнительно.
+  Legacy-строка только с `n3_id` принимается, но блокирует рекомендации всех N4
+  этой группы, поскольку конкретный товар определить невозможно.
+- `order_id` (GUID разбираемого заказа) — необязателен только для получения TOP-5,
+  но обязателен для расчёта эффекта: по нему рекомендации связываются с текущим
+  либо последующим новым заказом.
 
 **Ответ 200:**
 ```json
@@ -162,12 +167,13 @@
 отгрузок (РТУ)**.
 
 **Поля рекомендаций** (товар/подгруппа — только GUID; имена 1С подставляет сама).
+Каждая строка относится к конкретной N4, отсутствующей в текущем заказе.
 Счётчики разведены по единице: `order_count`/`total_orders` — по **заказам**
 (`order_id`), `shipment_count`/`total_shipments` — по **отгрузкам** (`shipment_id`, РТУ).
 `frequency_pct` и `avg_qty` считаются **по заказам**. Всё — из реализованной истории
 (`shipment_lines`): заказ без единой РТУ в счётчики не входит.
 
-`analysis1_forgotten[]`: `type` (`missing`|`low_quantity`), `n3_id`, `n4_id`,
+`analysis1_forgotten[]`: `type` (`missing`), `n3_id`, `n4_id`,
 `order_count`/`total_orders`, `shipment_count`/`total_shipments`, **`shipped_qty`**,
 `frequency_pct`, `avg_qty`, `current_qty`, `priority` (`high`|`medium`).
 
@@ -215,9 +221,48 @@ Read-only выгрузка `recommendation_log` (append-only). Право `effec
   "limit": 1000, "offset": 0, "count": 1
 }
 ```
-BI связывает журнал с витриной по `(order_id, n3_id)` для атрибуции эффекта.
+Старый BI-контур связывает журнал с N3-витриной по `(order_id, n3_id)`. Для точной
+атрибуции рекомендованных N4 следует использовать следующий endpoint.
 
-## 8. GET /health → `{ "status": "ok" }`
+## 8. GET /api/effect/recommendation-attribution — прямой эффект N4
+
+Подтверждённый фактической отгрузкой эффект только тех N4, которые были показаны
+в TOP-5 клиента или ниши, отсутствовали в исходном заказе и затем были добавлены.
+
+Query: `niche`, `scenario` (`same_order`|`new_order`), `period_from`, `period_to`,
+`limit`, `offset`.
+
+```json
+{
+  "items": [
+    {
+      "recommendation_id": 42,
+      "recommendation_at": "2026-09-25T10:15:00+00:00",
+      "client_id": "c0ffee00-...",
+      "niche": "f928c3fd-...",
+      "kind": "forgotten",
+      "scenario": "new_order",
+      "source_order_id": "source-order-guid",
+      "target_order_id": "new-order-guid",
+      "n3_id": "d24d39bd-...",
+      "n4_id": "8917a4a0-...",
+      "target_order_date": "2026-09-26",
+      "ordered_qty": 10.0,
+      "shipped_qty": 8.0,
+      "realized_qty": 8.0
+    }
+  ],
+  "limit": 1000,
+  "offset": 0,
+  "count": 1
+}
+```
+
+`same_order` означает добавление N4 в анализируемый заказ. `new_order` — добавление
+в первый подходящий новый заказ того же клиента в течение двух рабочих дней.
+Повторные рекомендации и конкурирующие связи дедуплицируются.
+
+## 9. GET /health → `{ "status": "ok" }`
 
 ---
 

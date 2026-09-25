@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Механика достижения эффекта ИИ ассистента в 2027 году</title>
+  <style>
+    :root {
+      --paper: #f4f1ea;
+      --surface: #fffdf8;
+      --ink: #17212b;
+      --muted: #66717a;
+      --navy: #173a54;
+      --navy-2: #255776;
+      --green: #24705a;
+      --green-soft: #dcece5;
+      --amber: #b86d19;
+      --amber-soft: #f5e6d2;
+      --red: #9b3f35;
+      --line: #cfd4d3;
+      --shadow: 0 18px 45px rgba(23, 33, 43, 0.09);
+      --radius: 20px;
+      --max: 1180px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(36, 112, 90, .09), transparent 30rem),
+        var(--paper);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 17px;
+      line-height: 1.55;
+    }
+
+    a { color: var(--navy-2); }
+    button, input { font: inherit; }
+    button:focus-visible, input:focus-visible, a:focus-visible {
+      outline: 3px solid rgba(36, 112, 90, .35);
+      outline-offset: 3px;
+    }
+
+    .wrap { width: min(var(--max), calc(100% - 40px)); margin-inline: auto; }
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--green);
+      font-size: .78rem;
+      font-weight: 750;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .hero { padding: 72px 0 46px; }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr);
+      gap: 56px;
+      align-items: end;
+    }
+    h1 {
+      margin: 0;
+      max-width: 850px;
+      font-size: clamp(2.25rem, 5.6vw, 5.2rem);
+      line-height: .98;
+      letter-spacing: -.055em;
+      font-weight: 760;
+    }
+    .hero-lead {
+      margin: 26px 0 0;
+      max-width: 760px;
+      font-size: clamp(1.1rem, 2vw, 1.35rem);
+      color: #394650;
+    }
+    .hero-note {
+      border-left: 4px solid var(--green);
+      padding: 4px 0 4px 22px;
+      color: #33414a;
+    }
+    .hero-note strong { display: block; margin-bottom: 8px; color: var(--ink); font-size: 1.08rem; }
+
+    .number-band {
+      background: var(--navy);
+      color: #fff;
+      padding: 34px 0;
+    }
+    .numbers {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0;
+    }
+    .number { padding: 8px 32px; border-left: 1px solid rgba(255,255,255,.22); }
+    .number:first-child { border-left: 0; padding-left: 0; }
+    .number:last-child { padding-right: 0; }
+    .number-value {
+      display: block;
+      font-size: clamp(2rem, 4vw, 3.5rem);
+      line-height: 1;
+      font-weight: 780;
+      letter-spacing: -.04em;
+    }
+    .number-label { display: block; margin-top: 11px; color: rgba(255,255,255,.78); }
+
+    section { padding: 68px 0; }
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(230px, .55fr) minmax(0, 1.45fr);
+      gap: 44px;
+      align-items: start;
+      margin-bottom: 34px;
+    }
+    h2 {
+      margin: 0;
+      font-size: clamp(1.7rem, 3vw, 2.65rem);
+      line-height: 1.08;
+      letter-spacing: -.035em;
+    }
+    .section-intro { margin: 0; max-width: 760px; color: #4b5963; font-size: 1.08rem; }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
+      gap: 24px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      counter-reset: flow;
+    }
+    .flow li {
+      position: relative;
+      min-height: 176px;
+      padding: 22px 18px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      border-radius: 0 18px 18px 18px;
+      counter-increment: flow;
+    }
+    .flow li::before {
+      content: counter(flow, decimal-leading-zero);
+      display: block;
+      margin-bottom: 22px;
+      color: var(--green);
+      font-size: .8rem;
+      font-weight: 780;
+      letter-spacing: .1em;
+    }
+    .flow li:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      right: -19px;
+      top: 50%;
+      width: 14px;
+      height: 14px;
+      border-top: 2px solid var(--green);
+      border-right: 2px solid var(--green);
+      transform: translateY(-50%) rotate(45deg);
+    }
+    .flow strong { display: block; line-height: 1.25; }
+    .flow span { display: block; margin-top: 10px; color: var(--muted); font-size: .88rem; line-height: 1.4; }
+
+    .equation {
+      margin-top: 42px;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+      align-items: stretch;
+    }
+    .factor {
+      position: relative;
+      padding: 20px;
+      background: transparent;
+      border-top: 3px solid var(--navy);
+    }
+    .factor:not(:last-child)::after {
+      content: "×";
+      position: absolute;
+      right: -13px;
+      top: 18px;
+      color: var(--green);
+      font-size: 1.2rem;
+      font-weight: 760;
+    }
+    .factor b { display: block; font-size: 1.02rem; }
+    .factor small { display: block; margin-top: 8px; color: var(--muted); }
+
+    .calculator-section { background: var(--surface); }
+    .scenario-top {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 30px;
+    }
+    .preset {
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 10px 16px;
+      cursor: pointer;
+    }
+    .preset[aria-pressed="true"] { background: var(--navy); color: #fff; border-color: var(--navy); }
+
+    .calculator {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(340px, .95fr);
+      gap: 48px;
+      align-items: start;
+    }
+    .control-group { margin-bottom: 30px; }
+    .control-title { display: flex; justify-content: space-between; gap: 20px; margin-bottom: 14px; font-weight: 720; }
+    .control-title span:last-child { color: var(--green); white-space: nowrap; }
+    .quarters, .drivers { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px 24px; }
+    .range-row label { display: flex; justify-content: space-between; gap: 12px; font-size: .92rem; }
+    .range-row output { font-weight: 750; color: var(--navy); }
+    input[type="range"] { width: 100%; accent-color: var(--green); }
+
+    .result {
+      position: sticky;
+      top: 24px;
+      padding: 32px;
+      background: var(--navy);
+      color: white;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .result-label { color: rgba(255,255,255,.72); font-size: .82rem; text-transform: uppercase; letter-spacing: .09em; }
+    .result-main { margin-top: 8px; font-size: clamp(2.4rem, 5vw, 4.4rem); line-height: .95; letter-spacing: -.045em; font-weight: 800; }
+    .result-unit { margin-top: 8px; color: rgba(255,255,255,.78); }
+    .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 28px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,.22); }
+    .result-grid b { display: block; font-size: 1.35rem; }
+    .result-grid span { display: block; color: rgba(255,255,255,.7); font-size: .82rem; }
+    .run-rate { margin: 26px 0 0; color: rgba(255,255,255,.84); }
+    .run-rate strong { color: white; }
+
+    .assumption {
+      margin-top: 24px;
+      padding: 18px 0 0;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: .9rem;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+      border-top: 4px solid var(--navy);
+    }
+    .quarter { padding: 26px 26px 12px; border-left: 1px solid var(--line); }
+    .quarter:first-child { border-left: 0; }
+    .quarter-num { color: var(--green); font-weight: 800; letter-spacing: .08em; }
+    .quarter h3 { margin: 9px 0 10px; font-size: 1.25rem; line-height: 1.25; }
+    .quarter p { margin: 0; color: var(--muted); font-size: .93rem; }
+
+    .proof-band { background: var(--green-soft); }
+    .proof {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, .78fr);
+      gap: 50px;
+      align-items: center;
+    }
+    .proof-chain { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 28px; }
+    .proof-step { padding: 18px 12px; border-bottom: 3px solid var(--green); }
+    .proof-step b { display: block; font-size: 1.45rem; color: var(--green); }
+    .proof-step span { display: block; margin-top: 6px; font-size: .86rem; color: #3c5b50; }
+    .warning { padding: 28px; background: var(--surface); border-radius: var(--radius); }
+    .warning h3 { margin: 0 0 12px; font-size: 1.22rem; }
+    .warning ul { margin: 0; padding-left: 20px; }
+    .warning li + li { margin-top: 8px; }
+
+    .bottom-line { padding: 56px 0 68px; }
+    .bottom-grid { display: grid; grid-template-columns: .8fr 1.2fr; gap: 48px; }
+    .decision-list { margin: 0; padding: 0; list-style: none; }
+    .decision-list li { padding: 14px 0; border-top: 1px solid var(--line); }
+    .decision-list li:last-child { border-bottom: 1px solid var(--line); }
+    .source { margin-top: 32px; color: var(--muted); font-size: .82rem; }
+
+    @media (max-width: 920px) {
+      .hero-grid, .section-head, .calculator, .proof, .bottom-grid { grid-template-columns: 1fr; gap: 26px; }
+      .numbers { grid-template-columns: 1fr; }
+      .number { border-left: 0; border-top: 1px solid rgba(255,255,255,.22); padding: 24px 0; }
+      .number:first-child { border-top: 0; }
+      .flow { grid-template-columns: repeat(3, 1fr); }
+      .flow li:nth-child(3)::after { display: none; }
+      .equation { grid-template-columns: 1fr; }
+      .factor:not(:last-child)::after { content: "×"; right: auto; left: 50%; top: auto; bottom: -20px; }
+      .timeline { grid-template-columns: 1fr 1fr; }
+      .quarter:nth-child(3) { border-left: 0; }
+      .result { position: static; }
+    }
+
+    @media (max-width: 610px) {
+      .wrap { width: min(100% - 24px, var(--max)); }
+      .hero { padding-top: 44px; }
+      section { padding: 52px 0; }
+      .flow, .quarters, .drivers, .timeline, .proof-chain { grid-template-columns: 1fr; }
+      .flow li { min-height: 0; }
+      .flow li:not(:last-child)::after { display: block; right: auto; left: 50%; top: auto; bottom: -19px; transform: rotate(135deg); }
+      .quarter, .quarter:nth-child(3) { border-left: 0; border-top: 1px solid var(--line); }
+      .quarter:first-child { border-top: 0; }
+      .result-grid { grid-template-columns: 1fr; }
+    }
+
+    @media print {
+      body { background: white; }
+      .preset, input[type="range"] { display: none; }
+      .result { position: static; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      section { break-inside: avoid; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="eyebrow">Бизнес механика 2027</p>
+        <h1>Эффект появляется только после дополнительной отгрузки</h1>
+        <p class="hero-lead">Карточка проекта задаёт потенциал. План 2027 года должен связать масштаб внедрения, работу менеджеров, доступность товара и фактическую отгрузку.</p>
+      </div>
+      <aside class="hero-note">
+        <strong>Главное условие</strong>
+        335 млн рублей возможны только при полном охвате 6,7 млн тонн в течение года, приросте отгрузки на 5% и EBITDA 1 000 рублей на тонну.
+      </aside>
+    </div>
+  </header>
+
+  <div class="number-band" aria-label="Основные цифры проекта">
+    <div class="wrap numbers">
+      <div class="number">
+        <span class="number-value">33,5 млн ₽</span>
+        <span class="number-label">полный год только в А ГРУПП</span>
+      </div>
+      <div class="number">
+        <span class="number-value">335 млн ₽</span>
+        <span class="number-label">полный год во всех торговых компаниях</span>
+      </div>
+      <div class="number">
+        <span class="number-value">1,005 млрд ₽</span>
+        <span class="number-label">три полных года при полном внедрении</span>
+      </div>
+    </div>
+  </div>
+
+  <main>
+    <section>
+      <div class="wrap">
+        <div class="section-head">
+          <h2>Как создаётся эффект</h2>
+          <p class="section-intro">Установка сервиса сама по себе не приносит деньги. Каждый этап цепочки должен сработать, иначе потенциальный эффект теряется.</p>
+        </div>
+        <ol class="flow">
+          <li><strong>Компания подключена</strong><span>Ассистент доступен менеджерам и получает данные 1С.</span></li>
+          <li><strong>Заказ охвачен</strong><span>Подсказка появляется во всех подходящих заказах, кроме исключений.</span></li>
+          <li><strong>Рекомендация точна</strong><span>Ассистент предлагает конкретный N4, который нужен клиенту и доступен к продаже.</span></li>
+          <li><strong>Менеджер предлагает</strong><span>Менеджер обсуждает дополнительную потребность с клиентом.</span></li>
+          <li><strong>Клиент соглашается</strong><span>Позиция добавляется в текущий или новый заказ.</span></li>
+          <li><strong>Товар отгружен</strong><span>Только фактически отгруженный прирост превращается в EBITDA.</span></li>
+        </ol>
+
+        <div class="equation" aria-label="Формула управляемого эффекта">
+          <div class="factor"><b>Охват компаний</b><small>какая доля объёма подключена</small></div>
+          <div class="factor"><b>Охват заказов</b><small>в скольких заказах появилась подсказка</small></div>
+          <div class="factor"><b>Принятие</b><small>какую долю предложений принял клиент</small></div>
+          <div class="factor"><b>Прирост заказа</b><small>на сколько вырос успешный заказ</small></div>
+          <div class="factor"><b>Факт отгрузки</b><small>какая часть прироста реализована</small></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="calculator-section" id="calculator">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>Сценарий эффекта 2027</h2>
+          <p class="section-intro">Измените охват по кварталам и показатели воронки. Расчёт показывает годовой эффект на базе 6,7 млн тонн.</p>
+        </div>
+
+        <div class="scenario-top" aria-label="Готовые сценарии">
+          <button class="preset" type="button" data-preset="ag" aria-pressed="false">Только А ГРУПП</button>
+          <button class="preset" type="button" data-preset="ramp" aria-pressed="true">Поэтапный тираж</button>
+          <button class="preset" type="button" data-preset="full" aria-pressed="false">Полный охват</button>
+        </div>
+
+        <div class="calculator">
+          <div>
+            <div class="control-group">
+              <div class="control-title"><span>Охват объёма торговых компаний</span><span id="avgCoverage">50% в среднем</span></div>
+              <div class="quarters">
+                <div class="range-row"><label for="q1">1 квартал <output id="q1o">10%</output></label><input id="q1" type="range" min="0" max="100" step="5" value="10"></div>
+                <div class="range-row"><label for="q2">2 квартал <output id="q2o">30%</output></label><input id="q2" type="range" min="0" max="100" step="5" value="30"></div>
+                <div class="range-row"><label for="q3">3 квартал <output id="q3o">60%</output></label><input id="q3" type="range" min="0" max="100" step="5" value="60"></div>
+                <div class="range-row"><label for="q4">4 квартал <output id="q4o">100%</output></label><input id="q4" type="range" min="0" max="100" step="5" value="100"></div>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <div class="control-title"><span>Операционная воронка</span><span id="upliftOut">5,0% прироста</span></div>
+              <div class="drivers">
+                <div class="range-row"><label for="orderCoverage">Охват подходящих заказов <output id="orderCoverageO">100%</output></label><input id="orderCoverage" type="range" min="50" max="100" step="5" value="100"></div>
+                <div class="range-row"><label for="acceptance">Клиент принял предложение <output id="acceptanceO">25%</output></label><input id="acceptance" type="range" min="5" max="60" step="5" value="25"></div>
+                <div class="range-row"><label for="orderGrowth">Рост успешного заказа <output id="orderGrowthO">25%</output></label><input id="orderGrowth" type="range" min="5" max="60" step="5" value="25"></div>
+                <div class="range-row"><label for="shipment">Доля прироста отгружена <output id="shipmentO">80%</output></label><input id="shipment" type="range" min="40" max="100" step="5" value="80"></div>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <div class="control-title"><span>EBITDA на дополнительную тонну</span><span><output id="ebitdaO">1 000</output> ₽/т</span></div>
+              <input id="ebitda" type="range" min="500" max="2000" step="100" value="1000">
+            </div>
+
+            <p class="assumption">Плановая модель. Она предполагает, что тоннаж заказов с принятыми рекомендациями сопоставим со средним заказом. Фактические коэффициенты должен подтвердить пилот А ГРУПП.</p>
+          </div>
+
+          <aside class="result" aria-live="polite">
+            <div class="result-label">Расчётный эффект 2027</div>
+            <div class="result-main"><span id="effect">167,5</span> млн ₽</div>
+            <div class="result-unit">дополнительная EBITDA за год</div>
+            <div class="result-grid">
+              <div><b id="tons">167,5 тыс. т</b><span>дополнительная отгрузка</span></div>
+              <div><b id="weighted">50%</b><span>средний охват объёма</span></div>
+              <div><b id="uplift">5,0%</b><span>прирост в подключённом контуре</span></div>
+              <div><b id="monthly">14,0 млн ₽</b><span>средний эффект в месяц</span></div>
+            </div>
+            <p class="run-rate">Для полного эффекта <strong>335 млн ₽</strong> нужны 100% годового охвата и фактический прирост 5%.</p>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="section-head">
+          <h2>План работы на 2027 год</h2>
+          <p class="section-intro">Решение о тираже в первом квартале не означает полный годовой эффект. Каждая волна подключения уменьшает или увеличивает средний охват года.</p>
+        </div>
+        <div class="timeline">
+          <article class="quarter"><span class="quarter-num">1 КВАРТАЛ</span><h3>Доказать экономику А ГРУПП</h3><p>Подтвердить конверсию, дополнительный тоннаж, качество N4, EBITDA на тонну и правила атрибуции.</p></article>
+          <article class="quarter"><span class="quarter-num">2 КВАРТАЛ</span><h3>Первая волна тиража</h3><p>Подключить выбранные компании, обучить менеджеров и запустить контроль использования рекомендаций.</p></article>
+          <article class="quarter"><span class="quarter-num">3 КВАРТАЛ</span><h3>Расширить охват</h3><p>Улучшить рекомендации по отказам и продажам, учесть наличие и сосредоточиться на результативных нишах.</p></article>
+          <article class="quarter"><span class="quarter-num">4 КВАРТАЛ</span><h3>Закрепить темп</h3><p>Подтвердить отгруженный прирост, рассчитать EBITDA и подготовить полный годовой режим на 2028 год.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="proof-band">
+      <div class="wrap proof">
+        <div>
+          <p class="eyebrow">Подтверждение результата</p>
+          <h2>Каждая тонна проходит четыре проверки</h2>
+          <div class="proof-chain" aria-label="Цепочка подтверждения эффекта">
+            <div class="proof-step"><b>O</b><span>заказ до подсказки</span></div>
+            <div class="proof-step"><b>R</b><span>что рекомендовал ассистент</span></div>
+            <div class="proof-step"><b>F</b><span>финальный заказ</span></div>
+            <div class="proof-step"><b>S</b><span>фактическая отгрузка</span></div>
+          </div>
+        </div>
+        <aside class="warning">
+          <h3>В эффект не входят</h3>
+          <ul>
+            <li>исходный тоннаж заказа;</li>
+            <li>рекомендации без изменения заказа;</li>
+            <li>прирост, который не был отгружен;</li>
+            <li>новые заказы вне согласованного окна;</li>
+            <li>повторно загруженные РТУ.</li>
+          </ul>
+        </aside>
+      </div>
+    </section>
+
+    <section class="bottom-line">
+      <div class="wrap bottom-grid">
+        <div>
+          <p class="eyebrow">Вывод для бизнеса</p>
+          <h2>335 млн рублей — это верхний годовой потенциал полного внедрения</h2>
+          <p>План 2027 года должен фиксировать поквартальный охват компаний и целевые показатели воронки. Без этого цифра остаётся экспертной оценкой.</p>
+        </div>
+        <div>
+          <h2>Решения до тиража</h2>
+          <ul class="decision-list">
+            <li>Утвердить N4 как уровень рекомендации и измерения прямого эффекта.</li>
+            <li>Зафиксировать два календарных или два рабочих дня для нового заказа.</li>
+            <li>Определить источник и период действия EBITDA на тонну.</li>
+            <li>Согласовать график подключения торговых компаний.</li>
+            <li>Назначить владельцев обучения менеджеров и контроля воронки.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="wrap source">Источник: карточка проекта «ИИ-помощник менеджера по заявкам клиентов», 17 сентября 2026 года. Показатели 5%, 6,7 млн т и 1 000 ₽/т являются плановыми предпосылками карточки.</div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const ids = ["q1", "q2", "q3", "q4", "orderCoverage", "acceptance", "orderGrowth", "shipment", "ebitda"];
+      const fields = Object.fromEntries(ids.map(id => [id, document.getElementById(id)]));
+      const presets = {
+        ag: { q1: 10, q2: 10, q3: 10, q4: 10 },
+        ramp: { q1: 10, q2: 30, q3: 60, q4: 100 },
+        full: { q1: 100, q2: 100, q3: 100, q4: 100 }
+      };
+      const percentOutputs = {
+        q1: "q1o",
+        q2: "q2o",
+        q3: "q3o",
+        q4: "q4o",
+        orderCoverage: "orderCoverageO",
+        acceptance: "acceptanceO",
+        orderGrowth: "orderGrowthO",
+        shipment: "shipmentO"
+      };
+      const ru = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1, minimumFractionDigits: 1 });
+      const integer = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
+
+      function value(id) { return Number(fields[id].value); }
+
+      function render() {
+        Object.entries(percentOutputs).forEach(([id, outputId]) => {
+          document.getElementById(outputId).textContent = value(id) + "%";
+        });
+        document.getElementById("ebitdaO").textContent = integer.format(value("ebitda"));
+
+        const avgCoverage = (value("q1") + value("q2") + value("q3") + value("q4")) / 4;
+        const operationalUplift = (value("orderCoverage") / 100) * (value("acceptance") / 100) * (value("orderGrowth") / 100) * (value("shipment") / 100);
+        const tons = 6700000 * (avgCoverage / 100) * operationalUplift;
+        const effect = tons * value("ebitda") / 1000000;
+
+        document.getElementById("avgCoverage").textContent = ru.format(avgCoverage) + "% в среднем";
+        document.getElementById("upliftOut").textContent = ru.format(operationalUplift * 100) + "% прироста";
+        document.getElementById("effect").textContent = ru.format(effect);
+        document.getElementById("tons").textContent = ru.format(tons / 1000) + " тыс. т";
+        document.getElementById("weighted").textContent = ru.format(avgCoverage) + "%";
+        document.getElementById("uplift").textContent = ru.format(operationalUplift * 100) + "%";
+        document.getElementById("monthly").textContent = ru.format(effect / 12) + " млн ₽";
+
+        document.querySelectorAll(".preset").forEach(button => button.setAttribute("aria-pressed", "false"));
+      }
+
+      ids.forEach(id => fields[id].addEventListener("input", render));
+      document.querySelectorAll(".preset").forEach(button => {
+        button.addEventListener("click", () => {
+          const data = presets[button.dataset.preset];
+          Object.entries(data).forEach(([id, val]) => { fields[id].value = val; });
+          render();
+          button.setAttribute("aria-pressed", "true");
+        });
+      });
+      render();
+      document.querySelector('[data-preset="ramp"]').setAttribute("aria-pressed", "true");
+    })();
+  </script>
+</body>
+</html>

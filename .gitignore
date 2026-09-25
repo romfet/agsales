@@ -9,3 +9,11 @@ backend/.env
 
 # Локальные инструкции ассистента — не в репозиторий
 CLAUDE.md
+
+# Local project-context originals that may contain sensitive data
+docs/project-context/local-sources/
+
+# Local artifact build and preview files
+.doc-build/
+.slide-build/
+.tmp_card_render/

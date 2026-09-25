@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Context"
+  short_description: "Maintains accumulated agsales project knowledge"
+  default_prompt: "Use $project-context to add these materials to the project knowledge base."
