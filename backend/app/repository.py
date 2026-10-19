@@ -259,24 +259,51 @@ async def get_client_niche(client_id: str) -> str | None:
         return (await conn.execute(q)).scalar_one_or_none()
 
 
-async def get_client_summary(client_id: str) -> dict:
-    """Клиентская сводка для шапки формы 1С: суммарная отгрузка за период (тонны,
-    последние 12 мес), дата последней отгрузки, число заказов и отгрузок (РТУ) в
-    истории. Заказы/отгрузки считаются из реализованной истории (shipment_lines):
-    orders_in_history — РАЗНЫЕ заказы, shipments_in_history — РАЗНЫЕ отгрузки."""
-    sql = text(
-        """
-        SELECT
-            COALESCE(sum(qty) FILTER (
-                WHERE shipment_date >= CURRENT_DATE - INTERVAL '1 year'), 0) AS shipped_qty,
-            max(shipment_date)          AS last_shipment_date,
-            count(DISTINCT order_id)    AS orders_in_history,
-            count(DISTINCT shipment_id) AS shipments_in_history
-        FROM shipment_lines WHERE client_id = :cid
-        """
-    )
+async def get_client_summary(
+    client_id: str,
+    period_from: date | None = None,
+    period_to: date | None = None,
+) -> dict:
+    """Клиентская сводка по реализованной истории ``shipment_lines``.
+
+    При переданном периоде все показатели ограничиваются им (обе границы
+    включительно). Без периода сохраняется прежний контракт: тоннаж за последние
+    12 месяцев, остальные показатели — по всей истории.
+    """
+    params: dict[str, Any] = {"cid": client_id}
+    if period_from is not None or period_to is not None:
+        conditions = ["client_id = :cid"]
+        if period_from is not None:
+            conditions.append("shipment_date >= :period_from")
+            params["period_from"] = period_from
+        if period_to is not None:
+            conditions.append("shipment_date <= :period_to")
+            params["period_to"] = period_to
+        sql = text(
+            f"""
+            SELECT
+                COALESCE(sum(qty), 0)       AS shipped_qty,
+                max(shipment_date)          AS last_shipment_date,
+                count(DISTINCT order_id)    AS orders_in_history,
+                count(DISTINCT shipment_id) AS shipments_in_history
+            FROM shipment_lines
+            WHERE {' AND '.join(conditions)}
+            """
+        )
+    else:
+        sql = text(
+            """
+            SELECT
+                COALESCE(sum(qty) FILTER (
+                    WHERE shipment_date >= CURRENT_DATE - INTERVAL '1 year'), 0) AS shipped_qty,
+                max(shipment_date)          AS last_shipment_date,
+                count(DISTINCT order_id)    AS orders_in_history,
+                count(DISTINCT shipment_id) AS shipments_in_history
+            FROM shipment_lines WHERE client_id = :cid
+            """
+        )
     async with engine.connect() as conn:
-        r = (await conn.execute(sql, {"cid": client_id})).one()
+        r = (await conn.execute(sql, params)).one()
     return {
         "shipped_qty": round(float(r.shipped_qty or 0), 3),
         "last_shipment_date": r.last_shipment_date.isoformat() if r.last_shipment_date else None,
@@ -313,14 +340,112 @@ async def get_niche_profile_n3(niche: str) -> list[dict]:
     return [_row_to_niche_profile_n3(r) for r in rows]
 
 
-async def get_client_profile_n4(client_id: str) -> list[dict]:
+async def get_client_profile_n4(
+    client_id: str,
+    period_from: date | None = None,
+    period_to: date | None = None,
+) -> list[dict]:
+    if period_from is not None or period_to is not None:
+        conditions = ["client_id = :client_id"]
+        params: dict[str, Any] = {"client_id": client_id}
+        if period_from is not None:
+            conditions.append("shipment_date >= :period_from")
+            params["period_from"] = period_from
+        if period_to is not None:
+            conditions.append("shipment_date <= :period_to")
+            params["period_to"] = period_to
+        sql = text(
+            f"""
+            WITH filtered AS (
+                SELECT * FROM shipment_lines
+                WHERE {' AND '.join(conditions)}
+            ),
+            totals AS (
+                SELECT count(DISTINCT order_id) AS total_orders,
+                       count(DISTINCT shipment_id) AS total_shipments
+                FROM filtered
+            ),
+            per_n4 AS (
+                SELECT max(n3_id) AS n3_id,
+                       n4_id,
+                       count(DISTINCT order_id) AS order_count,
+                       count(DISTINCT shipment_id) AS shipment_count,
+                       sum(qty) AS total_qty
+                FROM filtered
+                GROUP BY n4_id
+            )
+            SELECT p.n3_id, p.n4_id, p.order_count, p.shipment_count,
+                   p.total_qty, p.total_qty AS total_qty_12m,
+                   t.total_orders, t.total_shipments,
+                   round(p.order_count::numeric / NULLIF(t.total_orders, 0) * 100, 1)
+                       AS frequency_pct,
+                   round(p.total_qty / NULLIF(p.order_count, 0), 3)
+                       AS avg_qty_per_order
+            FROM per_n4 p CROSS JOIN totals t
+            """
+        )
+        async with engine.connect() as conn:
+            rows = (await conn.execute(sql, params)).all()
+        return [_row_to_client_profile_n4(r) for r in rows]
+
     q = select(t.client_profile_n4).where(t.client_profile_n4.c.client_id == client_id)
     async with engine.connect() as conn:
         rows = (await conn.execute(q)).all()
     return [_row_to_client_profile_n4(r) for r in rows]
 
 
-async def get_niche_profile_n4(niche: str) -> list[dict]:
+async def get_niche_profile_n4(
+    niche: str,
+    period_from: date | None = None,
+    period_to: date | None = None,
+) -> list[dict]:
+    if period_from is not None or period_to is not None:
+        conditions = ["niche = :niche"]
+        params: dict[str, Any] = {"niche": niche}
+        if period_from is not None:
+            conditions.append("shipment_date >= :period_from")
+            params["period_from"] = period_from
+        if period_to is not None:
+            conditions.append("shipment_date <= :period_to")
+            params["period_to"] = period_to
+        sql = text(
+            f"""
+            WITH filtered AS (
+                SELECT * FROM shipment_lines
+                WHERE {' AND '.join(conditions)}
+            ),
+            totals AS (
+                SELECT count(DISTINCT client_id) AS total_clients_in_niche,
+                       count(DISTINCT order_id) AS total_orders_in_niche,
+                       count(DISTINCT shipment_id) AS total_shipments_in_niche
+                FROM filtered
+            ),
+            per_n4 AS (
+                SELECT max(n3_id) AS n3_id,
+                       n4_id,
+                       count(DISTINCT client_id) AS client_count,
+                       count(DISTINCT order_id) AS order_count,
+                       count(DISTINCT shipment_id) AS shipment_count,
+                       sum(qty) AS total_qty
+                FROM filtered
+                GROUP BY n4_id
+            )
+            SELECT p.n3_id, p.n4_id, p.client_count, p.order_count,
+                   p.shipment_count, p.total_qty, p.total_qty AS total_qty_12m,
+                   t.total_clients_in_niche, t.total_orders_in_niche,
+                   t.total_shipments_in_niche,
+                   round(p.client_count::numeric
+                         / NULLIF(t.total_clients_in_niche, 0) * 100, 1) AS niche_pct,
+                   round(p.order_count::numeric
+                         / NULLIF(t.total_orders_in_niche, 0) * 100, 1) AS niche_freq_pct,
+                   round(p.total_qty / NULLIF(p.client_count, 0), 3) AS avg_qty_per_client
+            FROM per_n4 p CROSS JOIN totals t
+            """
+        )
+        async with engine.connect() as conn:
+            rows = (await conn.execute(sql, params)).all()
+        return [_row_to_niche_profile_n4(r) for r in rows]
+
     q = select(t.niche_profile_n4).where(t.niche_profile_n4.c.niche == niche)
     async with engine.connect() as conn:
         rows = (await conn.execute(q)).all()

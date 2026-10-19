@@ -51,6 +51,40 @@ async def test_analyze_contract():
     assert {"analysis1_forgotten", "analysis2_niche", "niche"} <= set(r.json())
 
 
+async def test_analyze_contract_with_period_and_validation():
+    async with _client() as c:
+        ok = await c.post(
+            "/api/analyze",
+            json={
+                "client_id": KNOWN_CLIENT,
+                "period_from": "2025-01-01",
+                "period_to": "2025-12-31",
+                "lines": [{"n3_id": "x", "qty": 1}],
+            },
+        )
+        missing_end = await c.post(
+            "/api/analyze",
+            json={
+                "client_id": KNOWN_CLIENT,
+                "period_from": "2025-01-01",
+                "lines": [{"n3_id": "x", "qty": 1}],
+            },
+        )
+        reversed_period = await c.post(
+            "/api/analyze",
+            json={
+                "client_id": KNOWN_CLIENT,
+                "period_from": "2026-01-01",
+                "period_to": "2025-01-01",
+                "lines": [{"n3_id": "x", "qty": 1}],
+            },
+        )
+
+    assert ok.status_code == 200
+    assert missing_end.status_code == 422
+    assert reversed_period.status_code == 422
+
+
 async def test_analyze_rejects_empty_order():
     async with _client() as c:
         r = await c.post("/api/analyze", json={"client_id": KNOWN_CLIENT, "lines": []})

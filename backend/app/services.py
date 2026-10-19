@@ -1,6 +1,8 @@
 """Service layer: orchestrates async data access + the pure analyzer."""
 from __future__ import annotations
 
+from datetime import date
+
 from backend.app import repository as repo
 from backend.app.domain import analyzer
 
@@ -22,21 +24,27 @@ async def _normalize_order_lines(lines: list[dict]) -> list[dict]:
     return out
 
 
-async def analyze(client_id: str, lines: list[dict], order_id: str | None = None) -> dict:
+async def analyze(
+    client_id: str,
+    lines: list[dict],
+    order_id: str | None = None,
+    period_from: date | None = None,
+    period_to: date | None = None,
+) -> dict:
     """Run both analyses for a client + the current (draft) order. Выданные
     рекомендации логируются в recommendation_log (сигнал «ассистент сработал»)."""
     order_lines = await _normalize_order_lines(lines)
 
-    summary = await repo.get_client_summary(client_id)   # шапка формы 1С
+    summary = await repo.get_client_summary(client_id, period_from, period_to)
     niche = await repo.get_client_niche(client_id)
 
     # Профили на уровне конкретного товара N4; N3 сохраняется как родительская группа.
-    client_profile = await repo.get_client_profile_n4(client_id)
+    client_profile = await repo.get_client_profile_n4(client_id, period_from, period_to)
     forgotten = analyzer.analyze_forgotten(client_profile, order_lines)
 
     niche_recs: list[dict] = []
     if niche:
-        niche_profile = await repo.get_niche_profile_n4(niche)
+        niche_profile = await repo.get_niche_profile_n4(niche, period_from, period_to)
         bought = {r["n4_id"] for r in client_profile}
         shown = {r["n4_id"] for r in forgotten}
         niche_recs = analyzer.analyze_niche(

@@ -6,7 +6,9 @@ display numbers.
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from datetime import date
+
+from pydantic import BaseModel, Field, model_validator
 
 
 # --- Auth (token-request flow) ---
@@ -86,7 +88,19 @@ class OrderLineIn(BaseModel):
 class AnalyzeIn(BaseModel):
     client_id: str
     order_id: str | None = None   # заказ, по которому идёт анализ (для журнала рекомендаций)
+    period_from: date | None = None  # начало периода отгрузок, включительно
+    period_to: date | None = None    # конец периода отгрузок, включительно
     lines: list[OrderLineIn] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_period(self):
+        """Границы периода передаются парой и образуют включительный интервал."""
+        if (self.period_from is None) != (self.period_to is None):
+            raise ValueError("period_from и period_to должны передаваться вместе")
+        if (self.period_from is not None and self.period_to is not None
+                and self.period_from > self.period_to):
+            raise ValueError("period_from не может быть позже period_to")
+        return self
 
 
 class ForgottenItem(BaseModel):
@@ -97,7 +111,7 @@ class ForgottenItem(BaseModel):
     total_orders: int               # всего заказов клиента
     shipment_count: int = 0         # отгрузок (РТУ) клиента с N4
     total_shipments: int = 0        # всего отгрузок клиента
-    shipped_qty: float = 0.0        # Σ отгружено тонн клиентом по N4 (из РТУ)
+    shipped_qty: float = 0.0        # Σ отгружено тонн клиентом по N4 за период (из РТУ)
     frequency_pct: float
     avg_qty: float
     current_qty: float | None = None
@@ -115,7 +129,7 @@ class NicheItem(BaseModel):
     total_orders: int               # всего заказов в нише
     shipment_count: int = 0         # отгрузок (РТУ) в нише с N4
     total_shipments: int = 0        # всего отгрузок в нише
-    shipped_qty: float = 0.0        # Σ отгружено тонн в нише по N4 (из РТУ)
+    shipped_qty: float = 0.0        # Σ отгружено тонн в нише по N4 за период (из РТУ)
     frequency_pct: float
     client_bought_before: bool
     avg_qty_per_client: float
@@ -125,7 +139,7 @@ class NicheItem(BaseModel):
 class ClientSummary(BaseModel):
     """Сводка по клиенту для шапки формы 1С."""
 
-    shipped_qty: float = 0.0              # Отгрузка за период (12 мес), тн — суммарно по клиенту
+    shipped_qty: float = 0.0              # Отгрузка за выбранный период, тн — суммарно по клиенту
     last_shipment_date: str | None = None  # Дата последней отгрузки (YYYY-MM-DD)
     orders_in_history: int = 0           # Разных заказов в истории (реализованных)
     shipments_in_history: int = 0        # Разных отгрузок (РТУ) в истории

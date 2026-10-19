@@ -25,4 +25,6 @@ async def analyze(payload: AnalyzeIn):
         payload.client_id,
         [l.model_dump() for l in payload.lines],
         order_id=payload.order_id,
+        period_from=payload.period_from,
+        period_to=payload.period_to,
     )

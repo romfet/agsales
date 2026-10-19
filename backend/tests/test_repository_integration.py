@@ -101,6 +101,51 @@ async def test_order_count_counts_orders_not_shipments():
     assert summary["orders_in_history"] == 1 and summary["shipments_in_history"] == 3
 
 
+async def test_analysis_period_filters_all_profile_metrics_inclusively():
+    """Произвольный период применяется ко всей статистике, включая обе границы."""
+    from datetime import date as _date
+
+    def sline(sid, shipment_date, n4, qty, order_id=None):
+        return {
+            "shipment_id": sid, "shipment_num": sid,
+            "shipment_date": shipment_date,
+            "order_id": order_id or "ord-" + sid,
+            "client_id": "cli-period", "niche": "niche-period",
+            "n3_id": "n3-period", "n4_id": n4, "qty": qty,
+        }
+
+    await repo.ingest_shipment_lines([
+        sline("PER-BEFORE", "2026-02-28", "n4-outside", 100),
+        sline("PER-START", "2026-03-01", "n4-inside", 2),
+        sline("PER-END", "2026-05-31", "n4-inside", 3),
+        sline("PER-AFTER", "2026-06-01", "n4-outside", 100),
+    ])
+
+    start, end = _date(2026, 3, 1), _date(2026, 5, 31)
+    summary = await repo.get_client_summary("cli-period", start, end)
+    assert summary == {
+        "shipped_qty": 5.0,
+        "last_shipment_date": "2026-05-31",
+        "orders_in_history": 2,
+        "shipments_in_history": 2,
+    }
+
+    client_rows = await repo.get_client_profile_n4("cli-period", start, end)
+    assert [row["n4_id"] for row in client_rows] == ["n4-inside"]
+    row = client_rows[0]
+    assert row["order_count"] == 2 and row["total_orders"] == 2
+    assert row["shipment_count"] == 2 and row["total_shipments"] == 2
+    assert row["total_qty_12m"] == 5.0
+    assert row["frequency_pct"] == 100.0 and row["avg_qty_per_order"] == 2.5
+
+    niche_rows = await repo.get_niche_profile_n4("niche-period", start, end)
+    assert [row["n4_id"] for row in niche_rows] == ["n4-inside"]
+    nrow = niche_rows[0]
+    assert nrow["client_count"] == 1 and nrow["total_clients_in_niche"] == 1
+    assert nrow["order_count"] == 2 and nrow["total_orders_in_niche"] == 2
+    assert nrow["total_qty_12m"] == 5.0 and nrow["niche_pct"] == 100.0
+
+
 async def test_order_versioning_and_diff():
     """Заказ версионируется по order_id: повторный ingest не затирает историю;
     order_lines = текущий срез, get_order_diff показывает добавленное."""
