@@ -175,6 +175,7 @@ async def _merge(k: _Kind, trigger: str, merge_id: int | None) -> dict | None:
         await x(text(
             f"CREATE TEMP TABLE _load ON COMMIT DROP AS "
             f"SELECT s.*, n.received_at FROM {k.staging} s JOIN _snap n USING (batch_id)"))
+        await x(text("ANALYZE _load"))
         await x(text("CREATE TEMP TABLE _docs ON COMMIT DROP AS "
                      f"SELECT DISTINCT {d} AS doc_id FROM _load"))
         # 2. Удаление документа (deleted=true): строки до последней отметки отбрасываются.
@@ -188,13 +189,17 @@ async def _merge(k: _Kind, trigger: str, merge_id: int | None) -> dict | None:
             "WHERE NOT l.deleted AND (dl.del_batch IS NULL OR l.batch_id > dl.del_batch)"))
         # 3. По каждому товару документа — последняя пачка, где он встретился.
         #    overridden: в БД уже лежит строка из более новой пачки (поздняя старая пачка).
+        # Все проверки — соединениями по ключу (doc_id, n4_id): коррелированные подзапросы
+        # на строку дают O(n·m) на полной выгрузке (сотни тысяч документов).
         await x(text(
             "CREATE TEMP TABLE _pick ON COMMIT DROP AS "
-            f"SELECT p.doc_id, p.n4_id, p.batch_id, EXISTS ("
-            "  SELECT 1 FROM staging_applied a WHERE a.kind = :k AND a.doc_id = p.doc_id "
-            "  AND a.n4_id = p.n4_id AND a.batch_id > p.batch_id) AS overridden "
+            "SELECT p.doc_id, p.n4_id, p.batch_id, "
+            "       COALESCE(a.batch_id > p.batch_id, false) AS overridden "
             f"FROM (SELECT {d} AS doc_id, n4_id, max(batch_id) AS batch_id "
-            f"      FROM _lines GROUP BY {d}, n4_id) p"), {"k": k.name})
+            f"      FROM _lines GROUP BY {d}, n4_id) p "
+            "LEFT JOIN staging_applied a "
+            "  ON a.kind = :k AND a.doc_id = p.doc_id AND a.n4_id = p.n4_id"), {"k": k.name})
+        await x(text("ANALYZE _pick"))
         await x(text(
             f"CREATE TEMP TABLE _new ON COMMIT DROP AS SELECT {s_cols} FROM _lines s "
             f"JOIN _pick p ON p.doc_id = s.{d} AND p.n4_id = s.n4_id AND p.batch_id = s.batch_id "
@@ -202,27 +207,31 @@ async def _merge(k: _Kind, trigger: str, merge_id: int | None) -> dict | None:
         await x(text(
             f"CREATE TEMP TABLE _db ON COMMIT DROP AS SELECT {s_cols} FROM {k.target} s "
             f"JOIN _docs dc ON dc.doc_id = s.{d}"))
+        await x(text("ANALYZE _db"))
         # Позиции из БД, которых нет в загрузке (документ не удалялся в этой загрузке).
         # stale: все присланные строки документа перекрыты более новыми в БД —
         # устаревшая пачка документ не сужает даже в режиме replace.
         await x(text(
             "CREATE TEMP TABLE _absent ON COMMIT DROP AS "
-            f"SELECT DISTINCT b.{d} AS doc_id, b.n4_id, NOT EXISTS ("
-            f"  SELECT 1 FROM _pick p WHERE p.doc_id = b.{d} AND NOT p.overridden) AS stale "
+            f"SELECT DISTINCT b.{d} AS doc_id, b.n4_id, (fr.doc_id IS NULL) AS stale "
             f"FROM _db b "
-            f"WHERE b.{d} NOT IN (SELECT doc_id FROM _del) "
-            f"AND NOT EXISTS (SELECT 1 FROM _pick p WHERE p.doc_id = b.{d} AND p.n4_id = b.n4_id)"))
+            f"LEFT JOIN _pick p ON p.doc_id = b.{d} AND p.n4_id = b.n4_id "
+            f"LEFT JOIN _del dl ON dl.doc_id = b.{d} "
+            f"LEFT JOIN (SELECT DISTINCT doc_id FROM _pick WHERE NOT overridden) fr "
+            f"  ON fr.doc_id = b.{d} "
+            f"WHERE p.doc_id IS NULL AND dl.doc_id IS NULL"))
+        await x(text("ANALYZE _absent"))
 
         # 4. Итоговый состав: присланное + (более новые строки БД) + (отсутствующие при keep).
         await x(text(
             f"CREATE TEMP TABLE _final ON COMMIT DROP AS "
             f"SELECT {cols} FROM _new "
             f"UNION ALL "
-            f"SELECT {s_cols} FROM _db s WHERE "
-            f"  EXISTS (SELECT 1 FROM _pick p WHERE p.doc_id = s.{d} AND p.n4_id = s.n4_id "
-            f"          AND p.overridden) "
-            f"  OR EXISTS (SELECT 1 FROM _absent a WHERE a.doc_id = s.{d} "
-            f"             AND a.n4_id = s.n4_id AND (:keep OR a.stale))"),
+            f"SELECT {s_cols} FROM _db s "
+            f"LEFT JOIN _pick p ON p.doc_id = s.{d} AND p.n4_id = s.n4_id "
+            f"LEFT JOIN _absent a ON a.doc_id = s.{d} AND a.n4_id = s.n4_id "
+            f"WHERE COALESCE(p.overridden, false) "
+            f"   OR (a.doc_id IS NOT NULL AND (:keep OR a.stale))"),
             {"keep": keep})
 
         stats = (await x(text(
