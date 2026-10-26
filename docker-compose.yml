@@ -49,6 +49,10 @@ services:
       # Из .env (рядом с docker-compose.yml). ПУСТО = авторизация открыта (только локально!).
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
       AUTH_CLIENTS: ${AUTH_CLIENTS:-[]}
+      # Приём данных 1С (docs/SDD_сборка_документов_при_приёме.md). api и worker — одинаково.
+      INGEST_MODE: ${INGEST_MODE:-direct}
+      INGEST_SHRINK_MODE: ${INGEST_SHRINK_MODE:-keep}
+      INGEST_MERGE_ON_COMMIT: ${INGEST_MERGE_ON_COMMIT:-false}
     ports:
       - "127.0.0.1:5050:5050"
     depends_on:
@@ -65,6 +69,14 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-agsales}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agsales}
       REFRESH_INTERVAL_MINUTES: ${REFRESH_INTERVAL_MINUTES:-10}
+      # Приём данных 1С (docs/SDD_сборка_документов_при_приёме.md). api и worker — одинаково.
+      INGEST_MODE: ${INGEST_MODE:-direct}
+      INGEST_SHRINK_MODE: ${INGEST_SHRINK_MODE:-keep}
+      INGEST_MERGE_ON_COMMIT: ${INGEST_MERGE_ON_COMMIT:-false}
+      INGEST_MERGE_IDLE_MINUTES: ${INGEST_MERGE_IDLE_MINUTES:-60}
+      INGEST_MERGE_MAX_DELAY_MINUTES: ${INGEST_MERGE_MAX_DELAY_MINUTES:-1440}
+      INGEST_VERSION_COALESCE_MINUTES: ${INGEST_VERSION_COALESCE_MINUTES:-240}
+      INGEST_BATCH_RETENTION_DAYS: ${INGEST_BATCH_RETENTION_DAYS:-7}
     depends_on:
       migrate:
         condition: service_completed_successfully

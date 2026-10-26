@@ -1,20 +1,25 @@
 """Async data-access layer over PostgreSQL.
 
-Ingest writes the pushed 1С feed (delta, upsert by order_num) into order_lines;
-analyze reads per-client/per-niche aggregates from materialized views. Identity
+Ingest writes the pushed 1С feed into order_lines / shipment_lines — directly
+(INGEST_MODE=direct: each request replaces its documents) or via staging and a
+worker merge (INGEST_MODE=staged, see app/staging.py); analyze reads per-client/per-niche aggregates from materialized views. Identity
 is by GUID (client_id / n3_id / n4_id); names are display-only.
 """
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import delete, func, insert, select, text
 
+from backend.app.core.config import settings
 from backend.app.db import tables as t
 from backend.app.db.session import engine
+
+logger = logging.getLogger("ingest")
 
 
 def _f(v: Any) -> float | None:
@@ -136,11 +141,41 @@ def _order_row(it: dict) -> dict:
     return row
 
 
+async def _shrunk_documents(conn, table, key: str, new_n4: dict[str, set[str]]) -> list[str]:
+    """Документы пачки, у которых в БД есть товары, отсутствующие в пачке: замена
+    целиком их сузит (признак того, что 1С прислала документ не полностью)."""
+    if not new_n4:
+        return []
+    col = table.c[key]
+    rows = (await conn.execute(
+        select(col, table.c.n4_id).where(col.in_(new_n4)).distinct()
+    )).all()
+    return sorted({r[0] for r in rows if r[1] not in new_n4[r[0]]})
+
+
+def _log_shrunk(kind: str, docs: list[str]) -> None:
+    if docs:
+        logger.warning(
+            "ingest %s: %d document(s) replaced by a version with fewer products "
+            "(1С sent a document in parts?), e.g. %s", kind, len(docs), docs[:3])
+
+
+def _staged_row(row: dict, it: dict) -> dict:
+    return {**row, "deleted": bool(it.get("deleted"))}
+
+
 async def ingest_order_lines(items: list[dict]) -> dict:
     """Upsert pushed order lines. Grain is the document, keyed by ``order_id``
     (GUID из 1С): every order_id in the batch is replaced (delete-insert);
     ``deleted`` removes it. order_lines хранит текущий срез; order_line_versions —
-    историю версий (для диффа исходное→финал)."""
+    историю версий (для диффа исходное→финал).
+
+    В режиме staged пачка только складывается в staging (app/staging.py)."""
+    if settings.ingest_mode == "staged":
+        from backend.app import staging
+        return await staging.stage_batch(
+            "orders", [_staged_row(_order_row(it), it) for it in items])
+
     by_order: dict[str, list[dict]] = {}
     deleted: set[str] = set()
     for it in items:
@@ -156,6 +191,10 @@ async def ingest_order_lines(items: list[dict]) -> dict:
     hash_by_order = {oid: _content_hash(lines) for oid, lines in by_order.items()}
 
     async with engine.begin() as conn:
+        shrunk = await _shrunk_documents(
+            conn, t.order_lines, "order_id",
+            {oid: {l["n4_id"] for l in lines} for oid, lines in by_order.items()})
+        _log_shrunk("orders", shrunk)
         if affected:
             await conn.execute(
                 delete(t.order_lines).where(t.order_lines.c.order_id.in_(affected))
@@ -185,7 +224,8 @@ async def ingest_order_lines(items: list[dict]) -> dict:
                     for it in by_order[oid]
                 ]
                 await conn.execute(insert(t.order_line_versions), version_rows)
-    return {"accepted": len(rows), "orders_affected": len(affected)}
+    return {"accepted": len(rows), "orders_affected": len(affected),
+            "status": "applied", "documents_shrunk": len(shrunk)}
 
 
 # --- Ingest (отгрузки: факт отгруженного) --------------------------------
@@ -203,7 +243,14 @@ def _shipment_row(it: dict) -> dict:
 async def ingest_shipment_lines(items: list[dict]) -> dict:
     """Upsert строк отгрузки. Ключ — shipment_id (GUID из 1С): каждый shipment_id
     в пачке заменяется целиком (delete-insert), ``deleted`` удаляет. Отгрузка —
-    факт, версий не держим. Заказ↔отгрузка — m2m через order_id на строке."""
+    факт, версий не держим. Заказ↔отгрузка — m2m через order_id на строке.
+
+    В режиме staged пачка только складывается в staging (app/staging.py)."""
+    if settings.ingest_mode == "staged":
+        from backend.app import staging
+        return await staging.stage_batch(
+            "shipments", [_staged_row(_shipment_row(it), it) for it in items])
+
     by_ship: dict[str, list[dict]] = {}
     deleted: set[str] = set()
     for it in items:
@@ -218,13 +265,18 @@ async def ingest_shipment_lines(items: list[dict]) -> dict:
     rows = [_shipment_row(it) for lines in by_ship.values() for it in lines]
 
     async with engine.begin() as conn:
+        shrunk = await _shrunk_documents(
+            conn, t.shipment_lines, "shipment_id",
+            {sid: {l["n4_id"] for l in lines} for sid, lines in by_ship.items()})
+        _log_shrunk("shipments", shrunk)
         if affected:
             await conn.execute(
                 delete(t.shipment_lines).where(t.shipment_lines.c.shipment_id.in_(affected))
             )
         if rows:
             await conn.execute(insert(t.shipment_lines), rows)
-    return {"accepted": len(rows), "shipments_affected": len(affected)}
+    return {"accepted": len(rows), "shipments_affected": len(affected),
+            "status": "applied", "documents_shrunk": len(shrunk)}
 
 
 # --- Recommendation log (сигнал «ассистент сработал» + что рекомендовали) --

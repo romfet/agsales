@@ -7,6 +7,7 @@ display numbers.
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -44,9 +45,19 @@ class IngestOrderLinesIn(BaseModel):
     items: list[IngestOrderLine] = Field(default_factory=list)
 
 
+# status: applied — записано сразу (INGEST_MODE=direct); staged — пачка в staging, будет
+# собрана worker'ом; duplicate — повтор несобранной пачки (не записан второй раз);
+# empty — пустой items.
+IngestStatus = Literal["applied", "staged", "duplicate", "empty"]
+
+
 class IngestResult(BaseModel):
     accepted: int
     orders_affected: int | None = None
+    status: IngestStatus | None = None
+    batch_id: int | None = None
+    duplicate_of: int | None = None
+    documents_shrunk: int | None = None   # direct: документы, сузившиеся при замене
 
 
 # --- Ingest отгрузок (1С → us): факт отгруженного, ключ shipment_id ---
@@ -73,6 +84,10 @@ class IngestShipmentLinesIn(BaseModel):
 class IngestShipmentResult(BaseModel):
     accepted: int
     shipments_affected: int | None = None
+    status: IngestStatus | None = None
+    batch_id: int | None = None
+    duplicate_of: int | None = None
+    documents_shrunk: int | None = None
 
 
 # --- Analyze (operator → us; endpoint 2) ---

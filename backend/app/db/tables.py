@@ -9,6 +9,7 @@ Order key = order_id (GUID); order_num is a display number. niche = Отрасл
 """
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Column,
     Date,
     DateTime,
@@ -54,6 +55,7 @@ order_line_versions = Table(
     Column("n3_id", Text, nullable=False),
     Column("n4_id", Text, nullable=False),
     Column("qty", Numeric, nullable=False),
+    Column("merge_id", BigInteger),          # сборка, создавшая версию (режим staged, 0007)
 )
 
 shipment_lines = Table(
@@ -70,6 +72,72 @@ shipment_lines = Table(
     Column("n3_id", Text, nullable=False),
     Column("n4_id", Text, nullable=False),
     Column("qty", Numeric, nullable=False),
+)
+
+# --- Приём в режиме staged (migrations/0007_ingest_staging.sql) ---
+ingest_batches = Table(
+    "ingest_batches",
+    metadata,
+    Column("batch_id", BigInteger, primary_key=True),
+    Column("kind", Text, nullable=False),
+    Column("received_at", DateTime(timezone=True)),
+    Column("payload_hash", Text, nullable=False),
+    Column("items", Integer, nullable=False),
+    Column("merged_at", DateTime(timezone=True)),
+    Column("merge_id", BigInteger),
+)
+
+staging_order_lines = Table(
+    "staging_order_lines",
+    metadata,
+    Column("batch_id", BigInteger, nullable=False),
+    Column("order_id", Text, nullable=False),
+    Column("order_num", Text, nullable=False),
+    Column("order_date", Date),
+    Column("client_id", Text, nullable=False),
+    Column("client_name", Text),
+    Column("niche", Text),
+    Column("n3_id", Text, nullable=False),
+    Column("n4_id", Text, nullable=False),
+    Column("qty", Numeric, nullable=False),
+    Column("deleted", Boolean, nullable=False),
+)
+
+staging_shipment_lines = Table(
+    "staging_shipment_lines",
+    metadata,
+    Column("batch_id", BigInteger, nullable=False),
+    Column("shipment_id", Text, nullable=False),
+    Column("shipment_num", Text),
+    Column("shipment_date", Date),
+    Column("order_id", Text, nullable=False),
+    Column("client_id", Text, nullable=False),
+    Column("client_name", Text),
+    Column("niche", Text),
+    Column("n3_id", Text, nullable=False),
+    Column("n4_id", Text, nullable=False),
+    Column("qty", Numeric, nullable=False),
+    Column("deleted", Boolean, nullable=False),
+)
+
+ingest_merges = Table(
+    "ingest_merges",
+    metadata,
+    Column("merge_id", BigInteger, primary_key=True),
+    Column("kind", Text, nullable=False),
+    Column("trigger", Text, nullable=False),
+    Column("requested_at", DateTime(timezone=True)),
+    Column("started_at", DateTime(timezone=True)),
+    Column("finished_at", DateTime(timezone=True)),
+    Column("shrink_mode", Text),
+    Column("batches", Integer),
+    Column("documents", Integer),
+    Column("lines", Integer),
+    Column("documents_shrunk", Integer),
+    Column("documents_qty_decreased", Integer),
+    Column("positions_kept", Integer),
+    Column("single_product_share", Numeric),
+    Column("error", Text),
 )
 
 recommendation_log = Table(

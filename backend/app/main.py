@@ -25,6 +25,11 @@ if not settings.auth_jwt_secret:
         "Set it (and AUTH_CLIENTS) before exposing the service publicly."
     )
 
+logging.getLogger("uvicorn.error").info(
+    "ingest_mode=%s (shrink=%s, merge_on_commit=%s)",
+    settings.ingest_mode, settings.ingest_shrink_mode, settings.ingest_merge_on_commit,
+)
+
 for module in (auth, ingest, analysis, effect):
     app.include_router(module.router)
 

@@ -1,5 +1,6 @@
 """Application settings, loaded from environment / backend/.env."""
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -37,6 +38,19 @@ class Settings(BaseSettings):
     # Aggregate-refresh cadence for the worker (push model: ingest writes raw
     # rows, the worker rebuilds materialized views on this interval).
     refresh_interval_minutes: int = 10
+
+    # --- Приём данных 1С (SDD_сборка_документов_при_приёме.md) ---
+    # direct — каждый запрос заменяет документ целиком (прежнее поведение);
+    # staged — пачки копятся в staging и собираются worker'ом по документам.
+    ingest_mode: Literal["direct", "staged"] = "direct"
+    # keep — позиции, которых нет в загрузке, сохраняются; replace — удаляются;
+    # replace_on_commit — удаляются только в сборке по commit.
+    ingest_shrink_mode: Literal["keep", "replace", "replace_on_commit"] = "keep"
+    ingest_merge_idle_minutes: int = 60          # сборка после паузы в пачках
+    ingest_merge_max_delay_minutes: int = 1440   # страховка: старейшая пачка старше
+    ingest_merge_on_commit: bool = False         # 1С зовёт commit после каждой пачки
+    ingest_version_coalesce_minutes: int = 240   # слияние версий разрезанного заказа
+    ingest_batch_retention_days: int = 7
 
     model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
 

@@ -5,6 +5,10 @@
 Push model: 1С ingests raw rows continuously via /api/ingest; this worker
 rebuilds the analytical materialized views every ``REFRESH_INTERVAL_MINUTES``
 (plus once on startup). Runs as its own container (see docker-compose.yml).
+
+INGEST_MODE=staged: every minute it also merges staged ingest batches into
+documents (app/staging.py) and rebuilds aggregates after a merge; once a day it
+cleans up merged batches.
 """
 from __future__ import annotations
 
@@ -13,6 +17,7 @@ import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from backend.app import staging
 from backend.app.core.config import settings
 from backend.app.db.session import engine
 from backend.app.repository import refresh_aggregates
@@ -32,8 +37,31 @@ async def _safe_refresh() -> None:
         logger.exception("aggregate refresh failed; will retry next interval")
 
 
+async def _safe_merge() -> None:
+    try:
+        if await staging.merge_tick():
+            await refresh_aggregates()
+            logger.info("aggregates refreshed after ingest merge")
+    except Exception:
+        logger.exception("ingest merge tick failed; will retry next minute")
+
+
+async def _safe_cleanup() -> None:
+    try:
+        await staging.cleanup_staging()
+        logger.info("ingest staging cleaned up")
+    except Exception:
+        logger.exception("ingest staging cleanup failed")
+
+
 async def main() -> None:
-    logger.info("worker starting (refresh every %dm)", settings.refresh_interval_minutes)
+    logger.info(
+        "worker starting (refresh every %dm; ingest_mode=%s, shrink=%s, idle=%dm, "
+        "max_delay=%dm, merge_on_commit=%s)",
+        settings.refresh_interval_minutes, settings.ingest_mode, settings.ingest_shrink_mode,
+        settings.ingest_merge_idle_minutes, settings.ingest_merge_max_delay_minutes,
+        settings.ingest_merge_on_commit,
+    )
     await _safe_refresh()  # initial build on startup
 
     scheduler = AsyncIOScheduler()
@@ -45,6 +73,11 @@ async def main() -> None:
         max_instances=1,
         coalesce=True,
     )
+    if settings.ingest_mode == "staged":
+        scheduler.add_job(_safe_merge, "interval", minutes=1, id="ingest_merge",
+                          max_instances=1, coalesce=True)
+        scheduler.add_job(_safe_cleanup, "interval", hours=24, id="ingest_cleanup",
+                          max_instances=1, coalesce=True)
     scheduler.start()
     try:
         await asyncio.Event().wait()  # keep the loop alive
