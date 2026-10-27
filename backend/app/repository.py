@@ -153,11 +153,22 @@ async def _shrunk_documents(conn, table, key: str, new_n4: dict[str, set[str]]) 
     return sorted({r[0] for r in rows if r[1] not in new_n4[r[0]]})
 
 
-def _log_shrunk(kind: str, docs: list[str]) -> None:
-    if docs:
+async def _record_direct(conn, kind: str, items: int, by_doc: dict[str, list[dict]],
+                         affected: set[str], shrunk: list[str]) -> None:
+    """Итоги пачки режима direct → ingest_direct_log (видны в /api/ingest/stats) и
+    предупреждение в лог, если документы сузились."""
+    if shrunk:
         logger.warning(
             "ingest %s: %d document(s) replaced by a version with fewer products "
-            "(1С sent a document in parts?), e.g. %s", kind, len(docs), docs[:3])
+            "(1С sent a document in parts?), e.g. %s", kind, len(shrunk), shrunk[:3])
+    if not items:
+        return
+    single = sum(1 for lines in by_doc.values() if len({l["n4_id"] for l in lines}) == 1)
+    await conn.execute(text(
+        "INSERT INTO ingest_direct_log (kind, items, documents, documents_shrunk, "
+        "single_product_docs, shrunk_sample) VALUES (:k, :i, :d, :s, :one, :smp)"),
+        {"k": kind, "i": items, "d": len(affected), "s": len(shrunk), "one": single,
+         "smp": shrunk[0] if shrunk else None})
 
 
 def _staged_row(row: dict, it: dict) -> dict:
@@ -194,7 +205,7 @@ async def ingest_order_lines(items: list[dict]) -> dict:
         shrunk = await _shrunk_documents(
             conn, t.order_lines, "order_id",
             {oid: {l["n4_id"] for l in lines} for oid, lines in by_order.items()})
-        _log_shrunk("orders", shrunk)
+        await _record_direct(conn, "orders", len(items), by_order, affected, shrunk)
         if affected:
             await conn.execute(
                 delete(t.order_lines).where(t.order_lines.c.order_id.in_(affected))
@@ -268,7 +279,7 @@ async def ingest_shipment_lines(items: list[dict]) -> dict:
         shrunk = await _shrunk_documents(
             conn, t.shipment_lines, "shipment_id",
             {sid: {l["n4_id"] for l in lines} for sid, lines in by_ship.items()})
-        _log_shrunk("shipments", shrunk)
+        await _record_direct(conn, "shipments", len(items), by_ship, affected, shrunk)
         if affected:
             await conn.execute(
                 delete(t.shipment_lines).where(t.shipment_lines.c.shipment_id.in_(affected))

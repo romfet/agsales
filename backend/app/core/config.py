@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     ingest_merge_on_commit: bool = False         # 1С зовёт commit после каждой пачки
     ingest_version_coalesce_minutes: int = 240   # слияние версий разрезанного заказа
     ingest_batch_retention_days: int = 7
+    # /commit в режиме direct: deferred — ответ сразу, агрегаты пересобирает worker
+    # (раз в REFRESH_INTERVAL_MINUTES); sync — пересборка в запросе (прежнее поведение).
+    # 1С зовёт commit после каждой пачки: sync замедлял выгрузку в разы.
+    ingest_commit_refresh: Literal["sync", "deferred"] = "deferred"
 
     model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
 

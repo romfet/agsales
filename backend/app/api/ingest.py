@@ -1,7 +1,9 @@
 """Endpoint 1 — ingest: 1С pushes the order history; we write it to the DB.
 
 Requires the ``ingest`` scope. INGEST_MODE=direct: each request replaces its
-documents at once; aggregates are rebuilt on ``/commit`` (or by the worker).
+documents at once; aggregates are rebuilt by the worker every
+REFRESH_INTERVAL_MINUTES (``/commit`` answers at once; with
+INGEST_COMMIT_REFRESH=sync it rebuilds them in the request, as before).
 INGEST_MODE=staged: requests go to staging and the worker merges documents across
 batches (see app/staging.py); ``/commit`` answers 202 at once and, only with
 INGEST_MERGE_ON_COMMIT=true, queues a merge. ``/refresh`` forces an aggregate rebuild.
@@ -46,8 +48,11 @@ async def ingest_commit(kind: Literal["orders", "shipments"] | None = None):
     worker (по паузе в пачках; по commit — только при INGEST_MERGE_ON_COMMIT=true)."""
     if settings.ingest_mode == "staged":
         return JSONResponse(status_code=202, content=await staging.request_commit(kind))
-    await repo.refresh_aggregates()
-    return {"status": "ok", "rows": await repo.count_order_lines()}
+    if settings.ingest_commit_refresh == "sync":
+        await repo.refresh_aggregates()
+        return {"status": "ok", "rows": await repo.count_order_lines(), "refresh": "done"}
+    # deferred: агрегаты пересоберёт worker (раз в REFRESH_INTERVAL_MINUTES).
+    return {"status": "ok", "rows": await repo.count_order_lines(), "refresh": "deferred"}
 
 
 @router.post("/refresh")

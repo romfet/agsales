@@ -26,8 +26,9 @@ if not settings.auth_jwt_secret:
     )
 
 logging.getLogger("uvicorn.error").info(
-    "ingest_mode=%s (shrink=%s, merge_on_commit=%s)",
+    "ingest_mode=%s (shrink=%s, merge_on_commit=%s, commit_refresh=%s)",
     settings.ingest_mode, settings.ingest_shrink_mode, settings.ingest_merge_on_commit,
+    settings.ingest_commit_refresh,
 )
 
 for module in (auth, ingest, analysis, effect):

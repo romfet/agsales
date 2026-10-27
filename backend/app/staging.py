@@ -419,8 +419,13 @@ async def merge_tick(now: datetime | None = None) -> bool:
 
 
 async def cleanup_staging() -> None:
-    """Ретенция собранных пачек и меток staging_applied (раз в сутки, worker)."""
+    """Ретенция собранных пачек, меток staging_applied и статистики direct
+    (раз в сутки, worker)."""
     async with engine.begin() as conn:
+        await conn.execute(text(
+            "DELETE FROM ingest_direct_log "
+            "WHERE received_at < now() - make_interval(days => CAST(:d AS int))"),
+            {"d": settings.ingest_batch_retention_days})
         await conn.execute(text(
             "DELETE FROM ingest_batches WHERE merged_at < now() - make_interval(days => CAST(:d AS int))"),
             {"d": settings.ingest_batch_retention_days})
@@ -429,7 +434,8 @@ async def cleanup_staging() -> None:
             "(SELECT 1 FROM ingest_batches b WHERE b.batch_id = a.batch_id)"))
     ac = engine.execution_options(isolation_level="AUTOCOMMIT")
     async with ac.connect() as conn:
-        for tbl in ("staging_order_lines", "staging_shipment_lines", "ingest_batches", "staging_applied"):
+        for tbl in ("staging_order_lines", "staging_shipment_lines", "ingest_batches",
+                    "staging_applied", "ingest_direct_log"):
             await conn.execute(text(f"VACUUM (ANALYZE) {tbl}"))
 
 
@@ -466,8 +472,28 @@ async def get_stats() -> dict:
         merges = (await conn.execute(text(
             f"SELECT {', '.join(_MERGE_COLS)} FROM ingest_merges "
             "ORDER BY merge_id DESC LIMIT 10"))).mappings().all()
+        direct = (await conn.execute(text(
+            "SELECT kind, count(*) AS batches, sum(items) AS items, sum(documents) AS documents, "
+            "sum(documents_shrunk) AS shrunk, sum(single_product_docs) AS single, "
+            "max(shrunk_sample) FILTER (WHERE documents_shrunk > 0) AS sample, "
+            "max(received_at) AS last_at "
+            "FROM ingest_direct_log WHERE received_at >= now() - interval '24 hours' "
+            "GROUP BY kind"))).mappings().all()
     return {
         "ingest_mode": settings.ingest_mode,
+        "commit_refresh": settings.ingest_commit_refresh,
+        # Режим direct, последние сутки. documents_shrunk > 0 или высокая доля
+        # однотоварных документов — 1С снова передаёт документы частями.
+        "direct_last_24h": {
+            r["kind"]: {
+                "batches": int(r["batches"]), "items": int(r["items"]),
+                "documents": int(r["documents"]), "documents_shrunk": int(r["shrunk"]),
+                "single_product_share": round(int(r["single"]) / int(r["documents"]), 4)
+                if r["documents"] else None,
+                "shrunk_sample": r["sample"], "last_batch_at": r["last_at"].isoformat(),
+            }
+            for r in direct
+        },
         "shrink_mode": settings.ingest_shrink_mode,
         "merge_on_commit": settings.ingest_merge_on_commit,
         "merge_idle_minutes": settings.ingest_merge_idle_minutes,

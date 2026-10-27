@@ -91,9 +91,13 @@ async def test_analyze_rejects_empty_order():
     assert r.status_code == 400
 
 
-async def test_ingest_then_analyze_end_to_end():
+async def test_ingest_then_analyze_end_to_end(monkeypatch):
     """Push a SHIPMENT via ingest (профили строятся из отгрузок), refresh, then
-    analyze resolves n4_id → n3_id and flags the omitted subgroup as 'forgotten'."""
+    analyze resolves n4_id → n3_id and flags the omitted subgroup as 'forgotten'.
+    commit в режиме sync пересобирает агрегаты сам (deferred — см.
+    test_ingest_direct_integration.py)."""
+    from backend.app.core.config import settings
+    monkeypatch.setattr(settings, "ingest_commit_refresh", "sync")
     def sline(n3, n4):
         return {
             "shipment_id": "SH-T1", "shipment_num": "SH-T1", "shipment_date": "2026-06-01",
@@ -106,7 +110,7 @@ async def test_ingest_then_analyze_end_to_end():
         assert ing.status_code == 200 and ing.json()["accepted"] == 2
 
         cm = await c.post("/api/ingest/commit")
-        assert cm.status_code == 200
+        assert cm.status_code == 200 and cm.json()["refresh"] == "done"
 
         # draft order has only subgroup n3-A → n3-B should surface as forgotten
         an = await c.post(

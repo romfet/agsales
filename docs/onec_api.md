@@ -137,7 +137,10 @@
 
 ## 4. POST /api/ingest/commit
 Query (необязательно): `kind=orders|shipments`.
-- `direct`: пересобрать аналитику сейчас. **Ответ 200:** `{ "status": "ok", "rows": 26565 }`
+- `direct`: **ответ 200** сразу `{ "status": "ok", "rows": 26565, "refresh": "deferred" }` —
+  аналитику пересобирает сервис (раз в 10 мин, `REFRESH_INTERVAL_MINUTES`). Вызывать **один
+  раз в конце выгрузки**. С `INGEST_COMMIT_REFRESH=sync` — пересборка в запросе
+  (`"refresh": "done"`, ответ занимает десятки секунд).
 - `staged`: **ответ 202** сразу `{ "status": "accepted", "merge_on_commit": false, "merge_ids": {} }`.
   Сборку делает сервис по паузе в пачках; запускать сборку по commit
   (`INGEST_MERGE_ON_COMMIT=true`, тогда `merge_ids` → `/api/ingest/merges/{id}`) имеет смысл,
@@ -146,6 +149,9 @@ Query (необязательно): `kind=orders|shipments`.
 ### GET /api/ingest/stats, GET /api/ingest/merges/{merge_id}
 Режим приёма, несобранные пачки по видам данных, последние сборки (документов, строк,
 `positions_kept`, `documents_shrunk`, `documents_qty_decreased`, `single_product_share`).
+`direct_last_24h` — итоги режима `direct` за сутки по видам данных: пачек, документов,
+`documents_shrunk` (документ заменён версией с меньшим числом товаров — признак передачи
+документа частями) и `single_product_share`.
 
 ## 5. POST /api/analyze
 Текущая заявка → рекомендации. Stateless. Анализ на уровне конкретного товара N4;

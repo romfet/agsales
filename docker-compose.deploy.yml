@@ -48,6 +48,7 @@ services:
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
       AUTH_CLIENTS: ${AUTH_CLIENTS:-[]}
       # Приём данных 1С (docs/SDD_сборка_документов_при_приёме.md). api и worker — одинаково.
+      INGEST_COMMIT_REFRESH: ${INGEST_COMMIT_REFRESH:-deferred}
       INGEST_MODE: ${INGEST_MODE:-direct}
       INGEST_SHRINK_MODE: ${INGEST_SHRINK_MODE:-keep}
       INGEST_MERGE_ON_COMMIT: ${INGEST_MERGE_ON_COMMIT:-false}

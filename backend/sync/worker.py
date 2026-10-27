@@ -76,8 +76,8 @@ async def main() -> None:
     if settings.ingest_mode == "staged":
         scheduler.add_job(_safe_merge, "interval", minutes=1, id="ingest_merge",
                           max_instances=1, coalesce=True)
-        scheduler.add_job(_safe_cleanup, "interval", hours=24, id="ingest_cleanup",
-                          max_instances=1, coalesce=True)
+    scheduler.add_job(_safe_cleanup, "interval", hours=24, id="ingest_cleanup",
+                      max_instances=1, coalesce=True)
     scheduler.start()
     try:
         await asyncio.Event().wait()  # keep the loop alive
