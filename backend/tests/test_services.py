@@ -121,15 +121,24 @@ def test_analyze_period_validation():
     assert valid.period_from == date(2026, 3, 1)
     assert valid.period_to == date(2026, 5, 31)
 
-    with pytest.raises(ValidationError, match="должны передаваться вместе"):
-        AnalyzeIn.model_validate({
-            "client_id": "cli", "period_from": "2026-03-01", "lines": []
-        })
+    # Одна граница — открытый интервал (репозиторий фильтрует по заданной границе).
+    one = AnalyzeIn.model_validate({"client_id": "cli", "period_from": "2026-03-01", "lines": []})
+    assert one.period_from == date(2026, 3, 1) and one.period_to is None
 
-    with pytest.raises(ValidationError, match="не может быть позже"):
-        AnalyzeIn.model_validate({
-            "client_id": "cli",
-            "period_from": "2026-06-01",
-            "period_to": "2026-05-31",
-            "lines": [],
-        })
+    # Даты в формах 1С: пустая дата и "" → граница не задана; время отбрасывается.
+    def period(pf, pt):
+        m = AnalyzeIn.model_validate({"client_id": "cli", "period_from": pf, "period_to": pt, "lines": []})
+        return m.period_from, m.period_to
+
+    assert period("0001-01-01T00:00:00", "0001-01-01") == (None, None)
+    assert period("", "  ") == (None, None)
+    assert period("2026-03-01T00:00:00", "2026-05-31T23:59:59") == (date(2026, 3, 1), date(2026, 5, 31))
+    assert period("01.03.2026", "31.05.2026") == (date(2026, 3, 1), date(2026, 5, 31))
+
+    # Порядок границ проверяет эндпоинт (422 {"detail": "..."}), модель его принимает.
+    rev = AnalyzeIn.model_validate({
+        "client_id": "cli", "period_from": "2026-06-01", "period_to": "2026-05-31", "lines": []})
+    assert rev.period_from > rev.period_to
+
+    with pytest.raises(ValidationError, match="не удалось разобрать дату"):
+        AnalyzeIn.model_validate({"client_id": "cli", "period_from": "вчера", "lines": []})

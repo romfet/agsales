@@ -10,7 +10,7 @@ INGEST_MERGE_ON_COMMIT=true, queues a merge. ``/refresh`` forces an aggregate re
 """
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 from fastapi.responses import JSONResponse
 
 from backend.app import repository as repo
@@ -69,7 +69,7 @@ async def ingest_stats():
 
 
 @router.get("/merges/{merge_id}")
-async def ingest_merge(merge_id: int):
+async def ingest_merge(merge_id: int = Path(ge=1, le=2**63 - 1)):
     """Статус и итоги сборки."""
     m = await staging.get_merge(merge_id)
     if m is None:

@@ -52,6 +52,10 @@ services:
       INGEST_MODE: ${INGEST_MODE:-direct}
       INGEST_SHRINK_MODE: ${INGEST_SHRINK_MODE:-keep}
       INGEST_MERGE_ON_COMMIT: ${INGEST_MERGE_ON_COMMIT:-false}
+      INGEST_MERGE_IDLE_MINUTES: ${INGEST_MERGE_IDLE_MINUTES:-60}
+      INGEST_MERGE_MAX_DELAY_MINUTES: ${INGEST_MERGE_MAX_DELAY_MINUTES:-1440}
+      INGEST_VERSION_COALESCE_MINUTES: ${INGEST_VERSION_COALESCE_MINUTES:-240}
+      INGEST_BATCH_RETENTION_DAYS: ${INGEST_BATCH_RETENTION_DAYS:-7}
     # Порт наружу (доступ по <host>:5050). Для localhost-only верни "127.0.0.1:5050:5050".
     # Голый HTTP — bearer-токены идут открыто; для внешнего доступа ставь TLS/nginx впереди.
     ports:
@@ -68,6 +72,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-agsales}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agsales}
       REFRESH_INTERVAL_MINUTES: ${REFRESH_INTERVAL_MINUTES:-10}
       # Приём данных 1С (docs/SDD_сборка_документов_при_приёме.md). api и worker — одинаково.
+      INGEST_COMMIT_REFRESH: ${INGEST_COMMIT_REFRESH:-deferred}
       INGEST_MODE: ${INGEST_MODE:-direct}
       INGEST_SHRINK_MODE: ${INGEST_SHRINK_MODE:-keep}
       INGEST_MERGE_ON_COMMIT: ${INGEST_MERGE_ON_COMMIT:-false}

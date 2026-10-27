@@ -6,10 +6,10 @@ display numbers.
 """
 from __future__ import annotations
 
-from datetime import date
-from typing import Literal
+from datetime import date, datetime
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 # --- Auth (token-request flow) ---
@@ -91,6 +91,40 @@ class IngestShipmentResult(BaseModel):
 
 
 # --- Analyze (operator → us; endpoint 2) ---
+# Не-ISO форматы дат из 1С (как при приёме данных, repository._to_date).
+_DATE_FORMATS = ("%d.%m.%Y", "%d/%m/%Y", "%Y/%m/%d", "%d.%m.%y")
+_ONEC_EMPTY_DATE = date(1, 1, 1)
+
+
+def _period_date(v: Any) -> date | None:
+    """Граница периода: date / datetime / ISO-строка (в т.ч. со временем) / dd.mm.yyyy.
+    Пусто и «пустая дата» 1С → None. Нераспознанная строка → ошибка 422."""
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        d = v.date()
+    elif isinstance(v, date):
+        d = v
+    elif isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return None
+        try:
+            d = date.fromisoformat(s[:10])
+        except ValueError:
+            for fmt in _DATE_FORMATS:
+                try:
+                    d = datetime.strptime(s, fmt).date()
+                    break
+                except ValueError:
+                    continue
+            else:
+                raise ValueError(f"не удалось разобрать дату: {v!r}")
+    else:
+        raise ValueError(f"не удалось разобрать дату: {v!r}")
+    return None if d <= _ONEC_EMPTY_DATE else d
+
+
 class OrderLineIn(BaseModel):
     """A line of the current order. N4 is the normal analysis grain; an N3-only
     legacy line conservatively suppresses all recommendations from that group."""
@@ -103,19 +137,17 @@ class OrderLineIn(BaseModel):
 class AnalyzeIn(BaseModel):
     client_id: str
     order_id: str | None = None   # заказ, по которому идёт анализ (для журнала рекомендаций)
-    period_from: date | None = None  # начало периода отгрузок, включительно
-    period_to: date | None = None    # конец периода отгрузок, включительно
+    # Период отгрузок, обе границы включительно; любая может отсутствовать (открытый
+    # интервал). «Пустая дата» 1С (0001-01-01) и "" = граница не задана. Порядок
+    # границ проверяет эндпоинт (ответ {"detail": "..."}).
+    period_from: date | None = None
+    period_to: date | None = None
     lines: list[OrderLineIn] = Field(default_factory=list)
 
-    @model_validator(mode="after")
-    def validate_period(self):
-        """Границы периода передаются парой и образуют включительный интервал."""
-        if (self.period_from is None) != (self.period_to is None):
-            raise ValueError("period_from и period_to должны передаваться вместе")
-        if (self.period_from is not None and self.period_to is not None
-                and self.period_from > self.period_to):
-            raise ValueError("period_from не может быть позже period_to")
-        return self
+    @field_validator("period_from", "period_to", mode="before")
+    @classmethod
+    def _period_bound(cls, v: Any) -> date | None:
+        return _period_date(v)
 
 
 class ForgottenItem(BaseModel):

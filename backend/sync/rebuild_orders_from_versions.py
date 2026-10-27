@@ -9,14 +9,16 @@ order_line_versions — «версия» на каждый товар. Скри�
 (SDD_сборка_документов_при_приёме.md, §9.1):
 
 1. Только заказы, которые сейчас есть в order_lines (удалённые не воскрешаем).
-2. Циклы выгрузки — по каждому заказу: новый цикл, если пауза между версиями
-   больше ``--gap-hours`` или в версии снова встретился товар текущего цикла.
-3. Состав цикла: по каждому товару — строки из последней версии цикла с ним.
-   Товары последней версии предыдущего цикла, которых нет в текущем, переносятся
-   (версия не пишется, если состав совпал с предыдущей, — её товар иначе потерялся бы).
+2. Сеансы выгрузки — по паузам > ``--gap-hours`` во всём потоке версий; цикл заказа —
+   его версии внутри сеанса (повтор товара внутри сеанса — новый проход, новый цикл).
+3. Состав цикла: по каждому товару — строки из последней версии цикла с ним. Из прошлых
+   циклов ничего не переносится (удалённая позиция не воскресает). Ограничение: если
+   первая присылка цикла совпала с последней прошлого (версия не записана дедупом),
+   этот товар в цикле отсутствует.
 4. Новая история: одна версия на цикл; order_lines = состав последнего цикла.
 
-Запускать в окне обслуживания при остановленном приёме, после pg_dump. Старая
+Запускать в окне обслуживания при остановленном приёме, после pg_dump; запись — только
+с ``--confirm-backup``. Запись отказывается, если за время расчёта пришли данные. Старая
 история копируется в ``--backup-table``; таблица order_line_versions переписывается на
 месте (витрины эффекта ссылаются на неё по OID — переименовывать нельзя).
 """
@@ -25,6 +27,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -50,6 +53,7 @@ class Report:
     versions_before: int = 0
     versions_after: int = 0
     orders_only_in_versions: int = 0
+    sessions: int = 0
     n4_before: Counter = field(default_factory=Counter)
     n4_after: Counter = field(default_factory=Counter)
 
@@ -59,6 +63,7 @@ class Report:
             "products_added": self.products_added,
             "versions_before": self.versions_before, "versions_after": self.versions_after,
             "orders_only_in_versions": self.orders_only_in_versions,
+            "sessions": self.sessions,
             "products_per_order_before": _buckets(self.n4_before),
             "products_per_order_after": _buckets(self.n4_after),
         }
@@ -73,39 +78,51 @@ def _buckets(c: Counter) -> dict[str, int]:
     return out
 
 
-def rebuild_order(versions: list[dict], gap: timedelta) -> list[dict]:
+def rebuild_order(versions: list[dict], session_of: dict[int, int]) -> list[dict]:
     """Пересобрать историю одного заказа. ``versions`` — по возрастанию version_seq:
-    ``{"seq", "at", "lines": [...]}``. Возвращает новые версии (одна на цикл, без
-    подряд идущих одинаковых) того же вида; последняя — текущий состав заказа."""
+    ``{"seq", "at", "lines": [...]}``; ``session_of`` — version_seq → номер сеанса
+    выгрузки (глобальные паузы в потоке, см. ``_sessions``). Цикл заказа = его версии
+    внутри одного сеанса; повтор товара внутри сеанса начинает новый цикл (новый проход
+    выгрузки). Состав цикла — по каждому товару строки из последней версии цикла с ним.
+    Товары из прошлых циклов НЕ переносятся: позиция, удалённая между выгрузками,
+    не воскресает. Возвращает новые версии (без подряд идущих одинаковых)."""
     cycles: list[list[dict]] = []
     seen: set[str] = set()
     for v in versions:
         n4s = {l["n4_id"] for l in v["lines"]}
-        if not cycles or v["at"] - cycles[-1][-1]["at"] > gap or n4s & seen:
+        if (not cycles or session_of[v["seq"]] != session_of[cycles[-1][-1]["seq"]]
+                or n4s & seen):
             cycles.append([])
             seen = set()
         cycles[-1].append(v)
         seen |= n4s
 
     out: list[dict] = []
-    prev_last: dict | None = None
     for cyc in cycles:
         comp: dict[str, list[dict]] = {}
-        for v in cyc:                                   # по товару — последняя версия цикла
+        for v in cyc:
             by_n4: dict[str, list[dict]] = {}
             for l in v["lines"]:
                 by_n4.setdefault(l["n4_id"], []).append(l)
             comp.update(by_n4)
-        if prev_last is not None:                       # пробел из-за дедупа версий
-            for l in prev_last["lines"]:
-                comp.setdefault(l["n4_id"], [x for x in prev_last["lines"]
-                                             if x["n4_id"] == l["n4_id"]])
         lines = [l for n4 in sorted(comp) for l in comp[n4]]
         h = _content_hash(lines)
         if not out or out[-1]["hash"] != h:
             out.append({"seq": max(v["seq"] for v in cyc), "at": cyc[0]["at"],
                         "hash": h, "lines": lines})
-        prev_last = cyc[-1]
+    return out
+
+
+def sessions_from_gaps(seq_times: list[tuple[int, object]], gap: timedelta) -> dict[int, int]:
+    """version_seq → номер сеанса: новый сеанс после паузы > gap во ВСЁМ потоке версий
+    (ночная выгрузка идёт часами, но без пауз между пачками)."""
+    out: dict[int, int] = {}
+    sess, prev = 0, None
+    for seq, at in seq_times:
+        if prev is not None and at - prev > gap:
+            sess += 1
+        out[seq] = sess
+        prev = at
     return out
 
 
@@ -143,13 +160,19 @@ async def _iter_order_versions(conn):
 
 
 async def rebuild(gap_hours: float = 2.0, dry_run: bool = True,
-                  backup_table: str | None = None, refresh: bool = True) -> dict:
+                  backup_table: str | None = None, refresh: bool = True,
+                  confirm_backup: bool = False) -> dict:
     gap = timedelta(hours=gap_hours)
     rep = Report()
     if not dry_run:
-        if not backup_table:
-            raise ValueError("--backup-table обязателен для записи")
+        if not backup_table or not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", backup_table):
+            raise ValueError("--backup-table обязателен для записи: имя [a-z_][a-z0-9_]*")
+        if not confirm_backup:
+            raise ValueError("запись только с --confirm-backup (после pg_dump: стенд не резервируется)")
         async with engine.begin() as conn:
+            if (await conn.execute(text("SELECT to_regclass('_rebuild_versions')"))).scalar():
+                raise RuntimeError("_rebuild_versions уже есть: идёт другой запуск или прошлый "
+                                   "прерван — удалите _rebuild_versions и _rebuild_orders вручную")
             pending = (await conn.execute(text(
                 "SELECT count(*) FROM ingest_batches WHERE kind = 'orders' AND merged_at IS NULL"
             ))).scalar()
@@ -160,7 +183,6 @@ async def rebuild(gap_hours: float = 2.0, dry_run: bool = True,
                 raise RuntimeError(f"таблица {backup_table} уже существует")
             await conn.execute(text(
                 f"CREATE TABLE {backup_table} AS SELECT * FROM order_line_versions"))
-            await conn.execute(text("DROP TABLE IF EXISTS _rebuild_versions"))
             await conn.execute(text(
                 "CREATE UNLOGGED TABLE _rebuild_versions AS SELECT version_seq, ingested_at, "
                 "content_hash, " + ", ".join(_LINE_COLS) + " FROM order_line_versions WITH NO DATA"))
@@ -169,6 +191,15 @@ async def rebuild(gap_hours: float = 2.0, dry_run: bool = True,
 
     async with engine.connect() as rconn:
         await rconn.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
+        # Метки снимка: при записи сверяем, что за время расчёта ничего не пришло.
+        mark = (await rconn.execute(text(
+            "SELECT (SELECT max(id) FROM order_line_versions) AS v, "
+            "       (SELECT max(id) FROM order_lines) AS o"))).one()
+        seq_times = (await rconn.execute(text(
+            "SELECT version_seq, min(ingested_at) FROM order_line_versions "
+            "GROUP BY version_seq ORDER BY version_seq"))).all()
+        session_of = sessions_from_gaps([(r[0], r[1]) for r in seq_times], gap)
+        rep.sessions = len(set(session_of.values()))
         current = await _current_orders(rconn)
         rep.orders_only_in_versions = (await rconn.execute(text(
             "SELECT count(DISTINCT order_id) FROM order_line_versions v "
@@ -195,7 +226,7 @@ async def rebuild(gap_hours: float = 2.0, dry_run: bool = True,
         async for oid, vers in _iter_order_versions(rconn):
             rep.orders += 1
             rep.versions_before += len(vers)
-            new = rebuild_order(vers, gap)
+            new = rebuild_order(vers, session_of)
             rep.versions_after += len(new)
             cur_hash, cur_n4 = current.get(oid, (None, 0))
             last = new[-1]
@@ -219,6 +250,17 @@ async def rebuild(gap_hours: float = 2.0, dry_run: bool = True,
         async with engine.begin() as conn:
             await conn.execute(text("SELECT pg_advisory_xact_lock(CAST(:a AS int), 1)"),
                                {"a": _MERGE_LOCK_KEY})
+            # Приём direct не берёт advisory-lock: блокируем запись в таблицы заказов и
+            # отказываемся, если после снимка что-то пришло.
+            await conn.execute(text(
+                "LOCK TABLE order_lines, order_line_versions IN SHARE ROW EXCLUSIVE MODE"))
+            now_mark = (await conn.execute(text(
+                "SELECT (SELECT max(id) FROM order_line_versions) AS v, "
+                "       (SELECT max(id) FROM order_lines) AS o"))).one()
+            if (now_mark.v, now_mark.o) != (mark.v, mark.o):
+                raise RuntimeError("за время расчёта пришли новые данные заказов — "
+                                   "остановите приём и запустите снова "
+                                   "(удалите _rebuild_versions и _rebuild_orders)")
             await conn.execute(text(
                 "DELETE FROM order_line_versions v USING _rebuild_orders r "
                 "WHERE v.order_id = r.order_id"))
@@ -249,9 +291,11 @@ async def _main() -> None:
     ap.add_argument("--gap-hours", type=float, default=2.0, help="пауза, начинающая новый цикл")
     ap.add_argument("--backup-table", help="куда скопировать старую историю (обязательно для записи)")
     ap.add_argument("--no-refresh", action="store_true", help="не пересчитывать агрегаты")
+    ap.add_argument("--confirm-backup", action="store_true",
+                    help="подтверждаю: pg_dump сделан, приём остановлен (обязательно для записи)")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    rep = await rebuild(a.gap_hours, a.dry_run, a.backup_table, not a.no_refresh)
+    rep = await rebuild(a.gap_hours, a.dry_run, a.backup_table, not a.no_refresh, a.confirm_backup)
     for k, v in rep.items():
         print(f"{k}: {v}")
     await engine.dispose()

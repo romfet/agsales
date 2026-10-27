@@ -33,7 +33,7 @@ async def _staged(monkeypatch):
     async with engine.begin() as conn:
         await conn.execute(text(
             "TRUNCATE ingest_batches, staging_order_lines, staging_shipment_lines, "
-            "staging_applied, ingest_merges"))
+            "staging_applied, ingest_merges, ingest_direct_log"))
     yield
 
 
@@ -527,3 +527,61 @@ async def test_e2e_feed_like_1c_direct_loses_lines_staged_assembles(monkeypatch)
 def _full_period():
     from datetime import date
     return date(2000, 1, 1), date(2100, 1, 1)
+
+
+# --- Ревью 27.10.2026 -------------------------------------------------------------
+
+async def test_value_returning_to_earlier_one_is_not_lost():
+    """S1: в одной загрузке qty 5 → 7 → 5. Третья пачка совпадает с первой, но не
+    с последней — это не ретрай, итог 5 (а не 7)."""
+    for qty in (5, 7, 5):
+        r = await repo.ingest_order_lines([ol("STG-S1", "n4-a", qty)])
+        assert r["status"] == "staged"
+    await staging.merge_staging("orders", "idle")
+    assert await order_state("STG-S1") == {"n4-a": [5.0]}
+
+
+async def test_coalesce_window_counts_from_merge_time():
+    """S2: первая пачка пришла 5 ч назад, собрана только что; дослан товар —
+    версии сливаются (окно от времени сборки, не от прихода пачки)."""
+    await repo.ingest_order_lines([ol("STG-S2", "n4-a", 1)])
+    await q("UPDATE ingest_batches SET received_at = received_at - interval '5 hours'")
+    await staging.merge_staging("orders", "idle")
+    await repo.ingest_order_lines([ol("STG-S2", "n4-b", 1)])
+    await staging.merge_staging("orders", "idle")
+    assert [v for _, v in await versions("STG-S2")] == [["n4-a", "n4-b"]]
+
+
+async def test_stale_staged_batches_do_not_overwrite_direct_writes(monkeypatch, caplog):
+    """S3: staged-пачка a=1 не собрана; режим переключили в direct, 1С записала a=9, b=2;
+    вернули staged — старая пачка отброшена, свежие данные целы."""
+    await repo.ingest_shipment_lines([sl("STG-S3", "n4-a", 1)])
+    monkeypatch.setattr(settings, "ingest_mode", "direct")
+    await repo.ingest_shipment_lines([sl("STG-S3", "n4-a", 9), sl("STG-S3", "n4-b", 2)])
+    st = await staging.get_stats()
+    assert st["warnings"] and st["pending"]["shipments"]["batches"] == 1
+    monkeypatch.setattr(settings, "ingest_mode", "staged")
+    with caplog.at_level("ERROR", logger="ingest.staging"):
+        assert await staging.merge_staging("shipments", "idle") is None
+    assert "discarded 1 staged batch" in caplog.text
+    assert await ship_state("STG-S3") == {"n4-a": [9.0], "n4-b": [2.0]}
+    (pending,), = await q("SELECT count(*) FROM ingest_batches WHERE merged_at IS NULL")
+    assert pending == 0
+
+
+async def test_failed_kind_does_not_block_other_kind(monkeypatch):
+    """S7: сборка заказов падает — отгрузки всё равно собираются."""
+    await repo.ingest_order_lines([ol("STG-S7", "n4-a", 1)])
+    await repo.ingest_shipment_lines([sl("STG-S7-S", "n4-a", 1)])
+    real = staging._merge
+
+    async def failing(k, trigger, merge_id):
+        if k.name == "orders":
+            raise RuntimeError("synthetic orders failure")
+        return await real(k, trigger, merge_id)
+
+    monkeypatch.setattr(staging, "_merge", failing)
+    monkeypatch.setattr(settings, "ingest_merge_idle_minutes", 0)
+    assert await staging.merge_tick()
+    assert await ship_state("STG-S7-S") == {"n4-a": [1.0]}
+    assert await order_state("STG-S7") == {}

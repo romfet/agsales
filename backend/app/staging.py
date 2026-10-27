@@ -29,6 +29,7 @@ logger = logging.getLogger("ingest.staging")
 # Ключ advisory-lock сборки (второй аргумент — вид данных). Отличается от ключа
 # refresh_aggregates (776610), чтобы сборка и пересчёт агрегатов не ждали друг друга.
 _MERGE_LOCK_KEY = 776611
+_STAGE_LOCK_KEY = 776612       # приём пачки staged (проверка повтора + вставка)
 _AUTO_TRIGGERS = ("idle", "max_delay")
 _INSERT_CHUNK = 5000
 
@@ -80,25 +81,21 @@ async def stage_batch(kind: str, rows: list[dict]) -> dict:
     docs = {r[k.doc] for r in rows}
     phash = _payload_hash(rows)
     async with engine.begin() as conn:
-        for _ in range(2):
-            batch_id = (await conn.execute(text(
-                """
-                INSERT INTO ingest_batches (kind, payload_hash, items)
-                VALUES (:kind, :h, :n)
-                ON CONFLICT (kind, payload_hash) WHERE merged_at IS NULL DO NOTHING
-                RETURNING batch_id
-                """), {"kind": kind, "h": phash, "n": len(rows)})).scalar()
-            if batch_id is not None:
-                break
-            dup = (await conn.execute(text(
-                "SELECT batch_id FROM ingest_batches "
-                "WHERE kind = :kind AND payload_hash = :h AND merged_at IS NULL"),
-                {"kind": kind, "h": phash})).scalar()
-            if dup is not None:
-                # Повтор несобранной пачки (ретрай 1С): второй раз не пишем.
-                return {"accepted": len(rows), k.affected_key: len(docs),
-                        "batch_id": None, "status": "duplicate", "duplicate_of": dup}
-            # Дубль успели собрать между INSERT и SELECT — пробуем вставить ещё раз.
+        # Проверка «повтор последней пачки» и вставка — под xact-lock приёма своего вида
+        # данных, иначе два одновременных ретрая оба пройдут проверку.
+        await conn.execute(text("SELECT pg_advisory_xact_lock(CAST(:a AS int), CAST(:b AS int))"),
+                           {"a": _STAGE_LOCK_KEY, "b": k.lock})
+        last = (await conn.execute(text(
+            "SELECT batch_id, payload_hash FROM ingest_batches "
+            "WHERE kind = :kind AND merged_at IS NULL ORDER BY batch_id DESC LIMIT 1"),
+            {"kind": kind})).first()
+        if last is not None and last.payload_hash == phash:
+            # Повтор последней несобранной пачки (ретрай 1С): второй раз не пишем.
+            return {"accepted": len(rows), k.affected_key: len(docs),
+                    "batch_id": None, "status": "duplicate", "duplicate_of": last.batch_id}
+        batch_id = (await conn.execute(text(
+            "INSERT INTO ingest_batches (kind, payload_hash, items) VALUES (:kind, :h, :n) "
+            "RETURNING batch_id"), {"kind": kind, "h": phash, "n": len(rows)})).scalar()
         await conn.execute(insert(k.staging_table),
                            [{**r, "batch_id": batch_id} for r in rows])
     return {"accepted": len(rows), k.affected_key: len(docs), "batch_id": batch_id,
@@ -147,6 +144,20 @@ async def _merge(k: _Kind, trigger: str, merge_id: int | None) -> dict | None:
     async with engine.begin() as conn:
         x = conn.execute
         await x(text("SELECT pg_advisory_xact_lock(CAST(:a AS int), CAST(:b AS int))"), {"a": _MERGE_LOCK_KEY, "b": k.lock})
+
+        # 0. Пачки, принятые раньше последней записи режима direct, устарели: если
+        #    собрать их сейчас, они затрут более свежие данные, записанные в direct
+        #    (переключение staged → direct → staged). Отбрасываем с ошибкой в логе.
+        stale = (await x(text(
+            "UPDATE ingest_batches SET merged_at = now() "
+            "WHERE kind = :k AND merged_at IS NULL AND received_at < ("
+            "  SELECT max(received_at) FROM ingest_direct_log WHERE kind = :k) "
+            "RETURNING batch_id"), {"k": k.name})).scalars().all()
+        if stale:
+            await x(text(f"DELETE FROM {k.staging} WHERE batch_id = ANY(:b)"), {"b": list(stale)})
+            logger.error("ingest merge %s: discarded %d staged batch(es) received before the "
+                         "last direct-mode write (mode was switched); ids %s…",
+                         k.name, len(stale), stale[:5])
 
         # 1. Снимок загрузки — явным списком пачек.
         await x(text(
@@ -335,7 +346,7 @@ async def _write_versions(conn, merge_id: int) -> int:
             ORDER BY v.order_id, v.version_seq DESC
         )
         SELECT v.order_id, v.version_seq, v.ingested_at, v.content_hash, m.trigger,
-               v.n4_id, v.qty
+               m.finished_at AS merged_at, v.n4_id, v.qty
         FROM order_line_versions v JOIN last USING (order_id, version_seq)
         LEFT JOIN ingest_merges m ON m.merge_id = v.merge_id
         """))).mappings().all()
@@ -343,7 +354,7 @@ async def _write_versions(conn, merge_id: int) -> int:
     for r in last_rows:
         e = last.setdefault(r["order_id"], {
             "seq": r["version_seq"], "at": r["ingested_at"], "hash": r["content_hash"],
-            "trigger": r["trigger"], "lines": []})
+            "trigger": r["trigger"], "merged_at": r["merged_at"], "lines": []})
         e["lines"].append(r)
 
     seq: int | None = None
@@ -354,7 +365,9 @@ async def _write_versions(conn, merge_id: int) -> int:
         prev = last.get(oid)
         if prev and prev["hash"] == h:
             continue
-        if (prev and prev["trigger"] in _AUTO_TRIGGERS and prev["at"] >= now - window
+        # Окно — от времени сборки прошлой версии (не от прихода её первой пачки).
+        if (prev and prev["trigger"] in _AUTO_TRIGGERS and prev["merged_at"] is not None
+                and prev["merged_at"] >= now - window
                 and not (_multiset(prev["lines"]) - _multiset(lines))):
             replace_keys.append((oid, prev["seq"]))
             vseq, at = prev["seq"], prev["at"]
@@ -413,8 +426,14 @@ async def merge_tick(now: datetime | None = None) -> bool:
             trigger = "idle"
         elif p.n and cur - p.oldest >= timedelta(minutes=settings.ingest_merge_max_delay_minutes):
             trigger = "max_delay"
-        if trigger and await merge_staging(kind, trigger, merge_id):
-            merged = True
+        if not trigger:
+            continue
+        try:
+            if await merge_staging(kind, trigger, merge_id):
+                merged = True
+        except Exception:
+            # Уже залогировано и записано в ingest_merges; другой вид данных собираем.
+            continue
     return merged
 
 
@@ -479,9 +498,14 @@ async def get_stats() -> dict:
             "max(received_at) AS last_at "
             "FROM ingest_direct_log WHERE received_at >= now() - interval '24 hours' "
             "GROUP BY kind"))).mappings().all()
+    warnings = []
+    if settings.ingest_mode == "direct" and pend:
+        warnings.append("есть несобранные пачки staged при режиме direct: они не будут "
+                        "применены (при возврате в staged — отброшены как устаревшие)")
     return {
         "ingest_mode": settings.ingest_mode,
         "commit_refresh": settings.ingest_commit_refresh,
+        "warnings": warnings,
         # Режим direct, последние сутки. documents_shrunk > 0 или высокая доля
         # однотоварных документов — 1С снова передаёт документы частями.
         "direct_last_24h": {

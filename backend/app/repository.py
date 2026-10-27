@@ -236,7 +236,7 @@ async def ingest_order_lines(items: list[dict]) -> dict:
                 ]
                 await conn.execute(insert(t.order_line_versions), version_rows)
     return {"accepted": len(rows), "orders_affected": len(affected),
-            "status": "applied", "documents_shrunk": len(shrunk)}
+            "status": "applied" if items else "empty", "documents_shrunk": len(shrunk)}
 
 
 # --- Ingest (отгрузки: факт отгруженного) --------------------------------
@@ -287,7 +287,7 @@ async def ingest_shipment_lines(items: list[dict]) -> dict:
         if rows:
             await conn.execute(insert(t.shipment_lines), rows)
     return {"accepted": len(rows), "shipments_affected": len(affected),
-            "status": "applied", "documents_shrunk": len(shrunk)}
+            "status": "applied" if items else "empty", "documents_shrunk": len(shrunk)}
 
 
 # --- Recommendation log (сигнал «ассистент сработал» + что рекомендовали) --

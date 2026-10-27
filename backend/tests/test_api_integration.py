@@ -81,8 +81,39 @@ async def test_analyze_contract_with_period_and_validation():
         )
 
     assert ok.status_code == 200
-    assert missing_end.status_code == 422
+    assert missing_end.status_code == 200                      # одна граница — открытый интервал
     assert reversed_period.status_code == 422
+    assert reversed_period.json() == {"detail": "period_from не может быть позже period_to"}
+
+
+async def test_analyze_period_accepts_1c_date_forms():
+    """Даты в том виде, как их может прислать 1С: пустая дата 0001-01-01, "", дата со
+    временем (КонецДня), ДД.ММ.ГГГГ. Пустые = «без периода» (тот же ответ, что без полей)."""
+    base = {"client_id": KNOWN_CLIENT, "lines": [{"n3_id": "x", "qty": 1}]}
+
+    def top(body):
+        return ([r["n4_id"] for r in body["analysis1_forgotten"]],
+                body["client_summary"]["shipped_qty"])
+
+    async with _client() as c:
+        plain = (await c.post("/api/analyze", json=base)).json()
+        for empty in ({"period_from": "0001-01-01T00:00:00", "period_to": "0001-01-01T00:00:00"},
+                      {"period_from": "", "period_to": ""},
+                      {"period_from": None, "period_to": "0001-01-01"}):
+            r = await c.post("/api/analyze", json={**base, **empty})
+            assert r.status_code == 200, (empty, r.text)
+            assert top(r.json()) == top(plain), empty            # не «пустые TOP-5»
+
+        iso = (await c.post("/api/analyze", json={
+            **base, "period_from": "2025-01-01", "period_to": "2025-12-31"})).json()
+        for form in ({"period_from": "2025-01-01T00:00:00", "period_to": "2025-12-31T23:59:59"},
+                     {"period_from": "01.01.2025", "period_to": "31.12.2025"}):
+            r = await c.post("/api/analyze", json={**base, **form})
+            assert r.status_code == 200, (form, r.text)
+            assert top(r.json()) == top(iso), form
+
+        bad = await c.post("/api/analyze", json={**base, "period_from": "вчера"})
+        assert bad.status_code == 422
 
 
 async def test_analyze_rejects_empty_order():

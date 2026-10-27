@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -77,7 +78,7 @@ async def main() -> None:
         scheduler.add_job(_safe_merge, "interval", minutes=1, id="ingest_merge",
                           max_instances=1, coalesce=True)
     scheduler.add_job(_safe_cleanup, "interval", hours=24, id="ingest_cleanup",
-                      max_instances=1, coalesce=True)
+                      max_instances=1, coalesce=True, next_run_time=datetime.now())
     scheduler.start()
     try:
         await asyncio.Event().wait()  # keep the loop alive

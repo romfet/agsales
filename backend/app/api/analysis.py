@@ -21,6 +21,8 @@ async def analyze(payload: AnalyzeIn):
     # помечается «missing».
     if not payload.lines or all(not (l.n3_id or l.n4_id) for l in payload.lines):
         raise HTTPException(status_code=400, detail="Заявка пуста")
+    if payload.period_from and payload.period_to and payload.period_from > payload.period_to:
+        raise HTTPException(status_code=422, detail="period_from не может быть позже period_to")
     return await services.analyze(
         payload.client_id,
         [l.model_dump() for l in payload.lines],
