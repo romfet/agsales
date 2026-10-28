@@ -9,6 +9,8 @@ backend/.env
 
 # Локальные инструкции ассистента — не в репозиторий
 CLAUDE.md
+AGENTS.md
+.agents/
 
 # Local project-context originals that may contain sensitive data
 docs/project-context/local-sources/

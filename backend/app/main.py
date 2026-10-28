@@ -16,6 +16,7 @@ from fastapi import FastAPI
 
 from backend.app.api import analysis, auth, effect, ingest
 from backend.app.core.config import settings
+from backend.app.core.security import check_signing_key
 
 app = FastAPI(title="AG Sales Analytics API", version="0.3.0")
 
@@ -24,6 +25,8 @@ if not settings.auth_jwt_secret:
         "AUTH DISABLED: AUTH_JWT_SECRET is empty — the API is OPEN. "
         "Set it (and AUTH_CLIENTS) before exposing the service publicly."
     )
+else:
+    logging.getLogger("uvicorn.error").info("auth signing key: %s", check_signing_key())
 
 logging.getLogger("uvicorn.error").info(
     "ingest_mode=%s (shrink=%s, merge_on_commit=%s, commit_refresh=%s)",
