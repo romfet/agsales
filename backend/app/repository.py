@@ -103,10 +103,20 @@ _ORDER_FIELDS = ("order_id", "order_num", "order_date", "client_id", "client_nam
 _DATE_FORMATS = ("%d.%m.%Y", "%d/%m/%Y", "%Y/%m/%d", "%d.%m.%y")
 
 
+_ONEC_EMPTY_DATE = date(1, 1, 1)
+
+
 def _to_date(v) -> date | None:
     """Дата из datetime / ISO-строки / распространённых не-ISO форматов, устойчиво:
     '2025-01-01T08:00', '2025-01-01', '01.01.2025', '2025/01/01' → date.
-    Непарсируемое значение → None (НЕ роняем всю пачку ingest из-за одной даты)."""
+    Непарсируемое значение → None (НЕ роняем всю пачку ingest из-за одной даты).
+    «Пустая дата» 1С (0001-01-01) → None: дата не задана (витрины эффекта для заказа
+    без даты берут дату поступления, а 0001-01-01 выпала бы из любого окна)."""
+    d = _parse_date(v)
+    return None if d is not None and d <= _ONEC_EMPTY_DATE else d
+
+
+def _parse_date(v) -> date | None:
     if v is None or v == "":
         return None
     if isinstance(v, datetime):     # datetime — подкласс date, проверяем первым

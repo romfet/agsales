@@ -20,6 +20,14 @@ def test_to_date_non_iso_formats():
     assert _to_date("2025/02/01") == date(2025, 2, 1)   # yyyy/mm/dd
 
 
+def test_to_date_onec_empty_date_is_none():
+    # «Пустая дата» 1С — дата не задана (как в /api/analyze).
+    assert _to_date("0001-01-01T00:00:00") is None
+    assert _to_date("01.01.0001") is None
+    assert _to_date(date(1, 1, 1)) is None
+    assert _to_date("0002-01-01") == date(2, 1, 1)
+
+
 def test_to_date_bad_returns_none_not_raises():
     # Непарсируемое → None, НЕ исключение (иначе падает вся пачка ingest).
     assert _to_date("не дата") is None
