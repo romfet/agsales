@@ -171,6 +171,18 @@ async def _record_direct(conn, kind: str, items: int, by_doc: dict[str, list[dic
          "smp": shrunk[0] if shrunk else None})
 
 
+async def _lock_documents(conn, kind: str, doc_ids) -> None:
+    """Сериализовать запись одного документа: одновременные пачки с тем же документом
+    (параллельные потоки выгрузки) иначе обе удаляют старые строки и обе вставляют
+    свои — строки умножаются. xact-lock по каждому документу пачки в одном порядке
+    (ORDER BY) — без взаимных блокировок; разные документы идут параллельно."""
+    if doc_ids:
+        await conn.execute(text(
+            "SELECT pg_advisory_xact_lock(hashtextextended(k, 0)) "
+            "FROM unnest(CAST(:keys AS text[])) AS k ORDER BY k"),
+            {"keys": sorted(f"{kind}:{d}" for d in doc_ids)})
+
+
 def _staged_row(row: dict, it: dict) -> dict:
     return {**row, "deleted": bool(it.get("deleted"))}
 
@@ -202,6 +214,7 @@ async def ingest_order_lines(items: list[dict]) -> dict:
     hash_by_order = {oid: _content_hash(lines) for oid, lines in by_order.items()}
 
     async with engine.begin() as conn:
+        await _lock_documents(conn, "orders", affected)
         shrunk = await _shrunk_documents(
             conn, t.order_lines, "order_id",
             {oid: {l["n4_id"] for l in lines} for oid, lines in by_order.items()})
@@ -276,6 +289,7 @@ async def ingest_shipment_lines(items: list[dict]) -> dict:
     rows = [_shipment_row(it) for lines in by_ship.values() for it in lines]
 
     async with engine.begin() as conn:
+        await _lock_documents(conn, "shipments", affected)
         shrunk = await _shrunk_documents(
             conn, t.shipment_lines, "shipment_id",
             {sid: {l["n4_id"] for l in lines} for sid, lines in by_ship.items()})

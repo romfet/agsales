@@ -149,3 +149,38 @@ async def test_feed_like_1c_with_commit_after_each_batch_deferred_is_fast(monkey
     monkeypatch.setattr(settings, "ingest_commit_refresh", "sync")
     slow = await timed_feed("DIR-SLOW")
     assert fast < slow                                       # пересборка в каждом commit дороже
+
+
+# --- Параллельная выгрузка ---------------------------------------------------------
+
+async def test_concurrent_sends_of_same_document_do_not_multiply_lines():
+    """Два потока 1С одновременно шлют один документ: строки не умножаются."""
+    import asyncio
+
+    def doc(q):
+        return [sl("DIR-RACE", n4, q) for n4 in ("a", "b")]
+
+    for _ in range(10):
+        await asyncio.gather(*(repo.ingest_shipment_lines(doc(i)) for i in range(8)))
+        await asyncio.gather(*(repo.ingest_order_lines([ol("DIR-RACE-O", "a", i), ol("DIR-RACE-O", "b", i)])
+                               for i in range(8)))
+        (s,), = await q("SELECT count(*) FROM shipment_lines WHERE shipment_id = 'DIR-RACE'")
+        (o,), = await q("SELECT count(*) FROM order_lines WHERE order_id = 'DIR-RACE-O'")
+        assert (s, o) == (2, 2)
+    # версии заказа не задвоились внутри одной присылки
+    rows = await q("SELECT version_seq, count(*) FROM order_line_versions "
+                   "WHERE order_id = 'DIR-RACE-O' GROUP BY 1 HAVING count(*) <> 2")
+    assert rows == []
+
+
+async def test_concurrent_batches_with_overlapping_documents_do_not_deadlock():
+    """Пачки с пересекающимися документами в разном порядке: без взаимной блокировки."""
+    import asyncio
+
+    a = [sl("DIR-X", "a"), sl("DIR-Y", "a"), sl("DIR-Z", "a")]
+    b = [sl("DIR-Z", "b"), sl("DIR-Y", "b"), sl("DIR-X", "b")]
+    await asyncio.wait_for(asyncio.gather(*(repo.ingest_shipment_lines(a if i % 2 else b)
+                                            for i in range(12))), timeout=30)
+    for sid in ("DIR-X", "DIR-Y", "DIR-Z"):
+        (n,), = await q("SELECT count(*) FROM shipment_lines WHERE shipment_id = :s", s=sid)
+        assert n == 1
